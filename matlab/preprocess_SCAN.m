@@ -1,22 +1,23 @@
+%% Setup
 loadBCI2kTools;
-Subject = 'BJH041'; %String of Subject Name
-user = expanduser('~');
-DataPath = sprintf("%s/Box/Brunner Lab/DATA/SCAN_Mayo/%s",user,Subject);
-checkDir(DataPath);
-channels = loadElectrodeChannels(DataPath);
+Subject = 'BJH041'; % String of Subject Name
+user = expanduser('~'); % Get local path for interoperability on different machines, function in my tools dir. 
+DataPath = sprintf("%s/Box/Brunner Lab/DATA/SCAN_Mayo/%s",user,Subject); % Path to data
+checkDir(DataPath); % check if data dir exists
+% Load Data and Metadata
+channels = loadElectrodeChannels(DataPath); % channel discription in parent subject directory, encodes they type and name of each channel
 dirContents = dir(DataPath);
-tgtFile = 'ablation';
+tgtFile = 'ablation'; % str for folder to parse in parent subject directory
 dataLocs = parseDir(dirContents,tgtFile);
-pathName = dataLocs{1};
-tDir = sprintf('%s/%s',DataPath,pathName);
-files = dir(tDir);
+pathName = dataLocs{end}; % select file wanted if multiple runs of this experiment (ie pre and post ablation), alphabetical order
+tDir = sprintf('%s/%s',DataPath,pathName); % path to specific session
+files = dir(tDir); % file list
 fname = parseDir(files,'dat');
 fname = fname{end};
 [data,states,parms]=load_bcidat(strcat(tDir,'/',fname),1);
 [keys,type] = labelDataChannels(data,channels);
-% writeCSVwithHeader(tDir,Subject,data,keys,1)
-saveDir = strcat(tDir,'/preprocessed');
-if ~exist(saveDir)
+saveDir = strcat(tDir,'/preprocessed')
+if ~exist(saveDir,'dir')
     mkdir(saveDir);
 end
 writeMATwithHeader(saveDir,Subject,data,keys,1);
@@ -29,7 +30,6 @@ function channels = loadElectrodeChannels(dir)
     otps = detectImportOptions(fname);
     channels = readtable(fname,otps);
 end
-
 function targets = parseDir(dir,target)
 targets = {};
 for i=1:length(dir)
@@ -38,7 +38,6 @@ for i=1:length(dir)
     end
 end
 end
-
 function checkDir(dir)
 
 if ~isfolder(dir)
@@ -47,7 +46,6 @@ else
     disp('Directory Found')
 end
 end
-
 function [keys,type] = labelDataChannels(data, channels)
 N_chan = size(data, 2);
 keys = {N_chan};
@@ -69,10 +67,53 @@ for i=1:N_chan
     type{i} = t;
 end
 end
-
+function signals = writeMATwithHeader(fpath,fname,data,header,removeEmpty)
+fpath = strcat(fpath,'/',fname,'.mat');
+signals = arrays2Structure(data,header);
+if removeEmpty
+    vars = fieldnames(signals);
+    rm_fields = contains(vars,'EMPTY');
+    rm_fields = vars(rm_fields);
+    signals = rmfield(signals,rm_fields);
+    
+end
+save(fpath,'signals','-mat','-v7');
+end
+function channels = writeChannelDescriptions(fpath,channels,chan_types,removeEmpty)
+fpath = strcat(fpath,'/channeltypes','.mat');
+chan_types = arrays2Structure(chan_types,channels);
+if removeEmpty
+    vars = fieldnames(chan_types);
+    rm_fields = contains(vars,'EMPTY');
+    rm_fields = vars(rm_fields);
+    chan_types = rmfield(chan_types,rm_fields);
+end
+save(fpath,'chan_types','-mat','-v7');
+end
+function states = writeStates2MAT(fpath,states)
+fpath = strcat(fpath,'/states','.mat');
+save(fpath,'states','-mat','-v7');
+end
+function writeStimuliCodes(parms,fpath)
+stimuli = parms.Stimuli.Value;
+stim_codes= cell2table(stimuli(1:end,:));
+fpath= strcat(fpath,'/stimuli.mat');
+stim_codes = table2struct(stim_codes);
+save(fpath,'stim_codes','-mat','-v7');
+end
+function out = arrays2Structure(data,labels)
+labels = makeValidFieldNames(labels);
+for j=1:size(data,2)
+    out.(labels{j}) = data(:,j);
+end
+end
+function labels = makeValidFieldNames(labels)
+for i=1:length(labels)
+    labels{i} = matlab.lang.makeValidName(labels{i});
+end
+end
 function table = writeCSVwithHeader(fpath,fname,data,header,removeEmpty)
 fpath = strcat(fpath,'/',fname,'.csv');
-% headerTable = cell2table(header, 'VariableNames',header);
 dataTable = array2table(data);
 dataTable.Properties.VariableNames = header;
 if removeEmpty
@@ -81,44 +122,4 @@ if removeEmpty
     dataTable(:,rm_cols) = [];
 end
 writetable(dataTable, fpath, 'WriteVariableNames', true);
-
 end
-
-function table = writeMATwithHeader(fpath,fname,data,header,removeEmpty)
-fpath = strcat(fpath,'/',fname,'.mat');
-% headerTable = cell2table(header, 'VariableNames',header);
-table = array2table(data);
-table.Properties.VariableNames = header;
-if removeEmpty
-    vars = table.Properties.VariableNames;
-    rm_cols = contains(vars,'EMPTY');
-    table(:,rm_cols) = [];
-end
-save(fpath,'table');
-end
-
-function table = writeChannelDescriptions(fpath,channels,chan_types,removeEmpty)
-fpath = strcat(fpath,'/channeltypes','.mat');
-table = cell2table(chan_types);
-table.Properties.VariableNames = channels;
-if removeEmpty
-    vars = table.Properties.VariableNames;
-    rm_cols = contains(vars,'EMPTY');
-    table(:,rm_cols) = [];
-end
-save(fpath,'table');
-end
-
-function table = writeStates2MAT(fpath,states)
-table = struct2table(states);
-fpath = strcat(fpath,'/states','.mat');
-save(fpath,"table");
-end
-
-function writeStimuliCodes(parms,fpath)
-stimuli = parms.Stimuli.Value;
-table= cell2table(stimuli(1:end,:));
-fpath= strcat(fpath,'/stimuli.mat');
-save(fpath,'table')
-end
-
