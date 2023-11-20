@@ -70,7 +70,7 @@ class SCAN_SingleSessionAnalysis():
             temp = savitzky_golay(temp,window_size=int(self.fs/2)-1,order = 0)
             # temp = hilbert_env(temp)
             temp = math.e**temp
-            output[muscle] = temp
+            output[muscle] = temp - np.mean(temp)
         return output
     def processEEG(self,EEG:dict):
         return EEG
@@ -84,7 +84,7 @@ class SCAN_SingleSessionAnalysis():
                 out[k] = self.session_data.data[k]
         return out
     def bipolarReference(self,a,b):
-        return a-b  
+        return b-a  
 
 class formatSession():
     def __init__(self,loc:Path,subject):
