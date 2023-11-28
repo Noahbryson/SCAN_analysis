@@ -7,5 +7,5 @@ dataPath = userPath / "Box\Brunner Lab\DATA\SCAN_Mayo"
 subject = 'BJH041'
 session = 'pre_ablation'
 
-a = SCAN_SingleSessionAnalysis(dataPath,subject,session)
+a = SCAN_SingleSessionAnalysis(dataPath,subject,session,load=True)
 

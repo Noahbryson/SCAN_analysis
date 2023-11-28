@@ -149,3 +149,20 @@ def zscore_normalize(data:np.ndarray):
     mean = np.mean(data)
     std = np.std(data)
     return (data-mean)/std
+
+def moving_average_np(data, window_size):
+    """Computes the moving average of the input data using a specified window size.
+
+    Args:
+        data (numpy array): The input data to filter.
+        window_size (int): The size of the moving average window.
+
+    Returns:
+        numpy array: The filtered data as a moving average.
+    """
+    weights = np.ones(window_size) / window_size
+    return np.convolve(data, weights, mode='valid')
+
+def moving_average_scipy(data, window):
+    from scipy.ndimage import uniform_filter1d
+    return uniform_filter1d(data, window, mode='constant', origin=-(window//2))[:-(window-1)]
