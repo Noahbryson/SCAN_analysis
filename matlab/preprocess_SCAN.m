@@ -13,17 +13,17 @@ pathName = dataLocs{end}; % select file wanted if multiple runs of this experime
 tDir = sprintf('%s/%s',DataPath,pathName); % path to specific session
 files = dir(tDir); % file list
 fname = parseDir(files,'dat');
-fname = fname{end};
-[data,states,parms]=load_bcidat(strcat(tDir,'/',fname),1);
-[keys,type] = labelDataChannels(data,channels);
-saveDir = strcat(tDir,'/preprocessed')
+fname = fname{end}; % extract fname from cell array
+[data,states,parms]=load_bcidat(strcat(tDir,'/',fname),1); % load BCI2000 dat file
+[keys,type] = labelDataChannels(data,channels); % generate labels from data and channel description
+saveDir = strcat(tDir,'/preprocessed') % path to save dir for preprocessed files
 if ~exist(saveDir,'dir')
     mkdir(saveDir);
 end
-writeMATwithHeader(saveDir,Subject,data,keys,1);
-test = writeChannelDescriptions(saveDir,keys,type,1);
-states = writeStates2MAT(saveDir,states);
-writeStimuliCodes(parms,saveDir)
+writeMATwithHeader(saveDir,Subject,data,keys,1); % write labeled data as a structure to .mat (v7.0) files
+test = writeChannelDescriptions(saveDir,keys,type,1); % write channel decriptions as a structure to .mat (v7.0) files
+states = writeStates2MAT(saveDir,states); % write states as a structure to .mat (v7.0) files
+writeStimuliCodes(parms,saveDir) % write stimuli code parm as a structure to .mat (v7.0) files -> will eventually reshape and encode other metadata like sampling rate
 
 function channels = loadElectrodeChannels(dir)
     fname = sprintf("%s/channels.csv",dir);
