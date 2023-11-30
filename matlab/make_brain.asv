@@ -1,0 +1,11 @@
+brain = load("C:\Users\nbrys\Box\Brunner Lab\DATA\SCAN_Mayo\BJH041\brain\brain_MNI.mat")
+figure(1)
+ax = subplot(2,1,1);
+plot3DModel(ax,brain.cortex,brain.annotation.Annotation)
+ax = subplot(2,1,2)
+plot3DModel(ax,brain.cortex)
+
+
+
+
+

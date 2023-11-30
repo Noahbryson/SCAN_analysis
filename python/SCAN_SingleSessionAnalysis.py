@@ -2,13 +2,14 @@ import os
 from pathlib import Path
 import scipy.io as scio
 import scipy.stats as st
+import pandas as pd
 from filters import *
 import math
 import time
 import pickle
 
 class SCAN_SingleSessionAnalysis():
-    def __init__(self,path:str or Path,subject:str,session:str,fs:int=2000,load=True) -> None:
+    def __init__(self,path:str or Path,subject:str,session:str,fs:int=2000,load=True,epoch_by_movement:bool=True) -> None:
         """
         Module containing functions for single session analysis of BCI2000 SCAN task
 
@@ -21,7 +22,12 @@ class SCAN_SingleSessionAnalysis():
         session: str
             name of the session targeted for analysis. typical values are pre_ablation and post_ablation
         fs: int
-            sampling frequency of the data, default is 2000 -> will deprecate and automate in the future. 
+            sampling frequency of the data, default is 2000 -> will deprecate and automate in the future.
+        load: bool
+            load saved datastructure of preprocessed data to speed up run-time. set to false if reprocessing is needed.
+            see self._processSignals
+        epoch_by_movement: bool, default = True
+            determine wheter or not movement trials are epoched via EMG onset of via stimulus onset.
         """
         if type(path) == str:
             path = Path(path)
@@ -32,13 +38,16 @@ class SCAN_SingleSessionAnalysis():
         self.muscleMapping = {'1_Hand':['wristExtensor', 'ulnar'], '3_Foot':['TBA'],'2_Tongue':['tongue']}
         self.subjectDir = path / subject / session
         dataLoc = self.subjectDir / 'preprocessed'
-        self.session_data = format_Stimulus_Presentation_Session(dataLoc,subject)
+        self.session_data = format_Stimulus_Presentation_Session(dataLoc,subject,plot_stimuli=False)
         self.signalTypes = set(self.session_data.channels.values())
         
         self.session_data.data = self._processSignals(load)
         self.move_epochs = self._epochData('move')
         self.rest_epochs = self._epochData('rest')
-        self._alignByMovementOnset()
+        self.motor_onset = self._EMG_activity_epochs(testplots=False)
+        self.move_epochs,self.rest_epochs = self.reshape_epochs()
+        if epoch_by_movement:
+            self.move_epochs = self._epoch_via_EMG()
         print('end init')
 
 
@@ -91,7 +100,7 @@ class SCAN_SingleSessionAnalysis():
         output = {}
         output['EEG'] = EEG
         return output
-    def process_sEEG(self,sEEG:dict):
+    def process_sEEG(self,sEEG:dict,gamma_power:bool=False):
         trajectories = [key[0:2] for key in sEEG.keys()]
         trajectories = set(trajectories)
         trajectories.remove('RE')
@@ -104,33 +113,35 @@ class SCAN_SingleSessionAnalysis():
             for idx,vals in enumerate(data[0:-1]):
                 label = f'{traj}_{idx+1}-{idx+2}'
                 temp = self._bipolarReference(data[idx+1],vals)
-                gamma = getGammaBand_sEEG(temp,self.fs,order=3)
-                bands = np.empty([len(bandSplit),len(gamma)])
-                for i,band in enumerate(bandSplit):
-                    p = bandpass(gamma,self.fs,Wn=band,order=3)
-                    pxx = hilbert_env(p) **2
-                    bands[i] = pxx
-                
-                temp = sum(bands)
-                # ax = plt.subplot(6,1,1)
-                # ax.plot(temp)
-                temp = np.log10(temp)
-                # ax = plt.subplot(6,1,2)
-                # ax.plot(temp)
-                temp = zscore_normalize(temp)
-                # ax = plt.subplot(6,1,3)
-                # ax.plot(temp)
-                temp = moving_average_np(temp,1000)
-                # temp = savitzky_golay(temp,window_size=999,order=0)
-                
-                # ax = plt.subplot(6,1,4)
-                # ax.plot(temp)
-                temp = math.e**temp
-                # ax = plt.subplot(6,1,5)
-                # ax.plot(temp)
-                temp = temp - 1
-                # ax = plt.subplot(6,1,6)
-                # ax.plot(temp)
+                temp = notch(temp,self.fs,60,30,1)
+                if gamma_power:
+                    gamma = getGammaBand_sEEG(temp,self.fs,order=3)
+                    bands = np.empty([len(bandSplit),len(gamma)])
+                    for i,band in enumerate(bandSplit):
+                        p = bandpass(gamma,self.fs,Wn=band,order=3)
+                        pxx = hilbert_env(p) **2
+                        bands[i] = pxx
+                    
+                    temp = sum(bands)
+                    # ax = plt.subplot(6,1,1)
+                    # ax.plot(temp)
+                    temp = np.log10(temp)
+                    # ax = plt.subplot(6,1,2)
+                    # ax.plot(temp)
+                    temp = zscore_normalize(temp)
+                    # ax = plt.subplot(6,1,3)
+                    # ax.plot(temp)
+                    temp = moving_average_np(temp,1000)
+                    # temp = savitzky_golay(temp,window_size=999,order=0)
+                    
+                    # ax = plt.subplot(6,1,4)
+                    # ax.plot(temp)
+                    temp = math.e**temp
+                    # ax = plt.subplot(6,1,5)
+                    # ax.plot(temp)
+                    temp = temp - 1
+                    # ax = plt.subplot(6,1,6)
+                    # ax.plot(temp)
                 traj_data[label] = temp 
             output[traj] = traj_data
         output = alphaSortDict(output)
@@ -145,7 +156,43 @@ class SCAN_SingleSessionAnalysis():
     def _bipolarReference(self,a,b):
         return b-a  
 
-
+    def reshape_epochs(self):
+        move = pd.DataFrame()
+        for k,d in self.move_epochs.items():
+            move = pd.concat([move,self.epochs_to_df(d,k)])
+        rest = pd.DataFrame()
+        for k,d in self.rest_epochs.items():
+            rest = pd.concat([rest,self.epochs_to_df(d,k)])
+        return move,rest
+        
+    def epochs_to_df(self,target:dict,ID:str):
+        """used for reformatting epoch dicts into dataframes where columns are each epoch and rows are each channel
+            the first column of the df will be a description of channel types for easier parsing
+            ----------
+            Params
+            ----------
+            target: dict
+                nested dictionary structure containing epoch data for one movement type
+                will work on rest and movement datastructures
+            ID: str
+                name of movement condition being fed in. 
+            """
+        remap = {}
+        for k,i in target.items():
+            temp = {}
+            for j in i.values():
+                temp.update(j)
+            remap[k] = temp
+        big_guy = []
+        for c_type,v in remap.items():
+            for a,b in v.items():
+                    temp = [a,c_type,ID]
+                    temp.extend(b)
+                    big_guy.append(temp)
+        num_epochs = len(big_guy[0]) - 3
+        headers = [i+1 for i in range(num_epochs)];headers.insert(0,'movement'),headers.insert(0,'type');headers.insert(0,'name')
+        return pd.DataFrame(big_guy,columns=headers)
+        
     def _epochData(self,cond:str):
         if cond == 'move':
             idx = 0
@@ -170,26 +217,50 @@ class SCAN_SingleSessionAnalysis():
         # grad = grad / max(abs(emg_stream))
         # deriv = np.diff(emg_stream, n=1)
         peaks_cwt = sig.find_peaks_cwt(emg_stream, widths = 500, noise_perc=thresh)
-        peak_thresh = .1*emg_stream[peaks_cwt[0]]
+        peak_thresh = .08*emg_stream[peaks_cwt[0]]
         onset = peaks_cwt[0]
         while onset > 0 and emg_stream[onset] > peak_thresh:
             onset -= 1
-        fig = plt.figure()
-        ax = plt.subplot(1,1,1)
-        # ax.plot(grad, label='grad')
-        ax.plot(emg_stream, label='data')
-        # ax.plot(deriv, label='deriv')
-        ax.axhline(thresh, label='thresh',c=(0,0,0))
-        ax.axvline(onset, c=(0,0,0))
-        for peak in peaks_cwt:
-            ax.axvline(peak, c=(1,0,0),label='_')
-        ax.legend()
-        plt.show()
-        return onset
-    def _reshapeEpoch(self,onset, epochData):
-        pass
+        start = int(onset - 0.5*self.fs) # shift 500ms in time to get window before movement begins
+        if start < 0:
+            start = 0
+        stop = int((4 * self.fs) + onset) # step to 4s after movement onset
+        # therefor range of start:stop should be 4.5*fs, in nihon-kohden case is 9000 samples
+        if testplot:
+            fig = plt.figure()
+            ax = plt.subplot(1,1,1)
+            # ax.plot(grad, label='grad')
+            ax.plot(emg_stream, label='data')
+            # ax.plot(deriv, label='deriv')
+            ax.axhline(thresh, label='thresh',c=(0,0,0))
+            ax.axvline(onset, c=(0,0,1))
+            ax.axvline(onset-1000, c=(0,0,1),alpha=0.6)
+            ax.axvline(onset+4.5*self.fs,c=(0,0,1))
+            ax.axvline(onset-1000+4.5*self.fs,c=(0,0,1),alpha=0.6)
+            for peak in peaks_cwt:
+                ax.axvline(peak, c=(1,0,0),label='_')
+                
+            ax.legend()
+            plt.show()
+        return [start,stop]
+    def _epoch_via_EMG(self):
+        if type(self.move_epochs) != pd.DataFrame:
+            self.move_epochs, self.rest_epochs = self.reshape_epochs()
+        output = pd.DataFrame()
+        for m, ints in self.motor_onset.items():
+            df = self.move_epochs.query("movement==@m")
+            strKeys = df.columns.to_list()
+            strKeys = [i for i in strKeys if type(i)==str]
+            temp = df[strKeys].copy()
+            for i,j in enumerate(ints):
+                temp[i+1] = df[i+1].apply(lambda x:sliceArray(x,j)) 
+            
+            output = pd.concat([output,temp])
+            del temp
+        return output
+        
 
-    def _alignByMovementOnset(self):
+    def _EMG_activity_epochs(self,testplots=False):
         output = {}
         for m_type, data in self.move_epochs.items():
             if m_type.find('rest') <0:
@@ -198,18 +269,150 @@ class SCAN_SingleSessionAnalysis():
                 keys = list(emg.keys())
                 numEpochs = len(emg[keys[0]])
                 for i in range(numEpochs):
-                    onset = 1e10
+                    onset = [1e10, 0]
                     for muscle in self.muscleMapping[m_type]:
                         dat = emg[muscle][i]
-                        temp = self._locateMuscleOnset(dat,testplot=True)
-                        if temp < onset:
+                        temp = self._locateMuscleOnset(dat,testplots)
+                        if temp[0] < onset[0]:
                             onset = temp
                     epochOnsets.append(onset)
                 output[m_type] = epochOnsets
                 
         return output
+
+    def _sEEG_epochPSDs(self,freqs):
+        move = pd.DataFrame()
+        cols = self.move_epochs.columns
+        window = sig.get_window('hann',Nx=self.fs)
+        f = [i for i in range(1,301)]
+        f = np.array(f)
+        for col in cols :
+            if type(col)==int:
+                move[col] = self.move_epochs[col].apply(lambda x:single_channel_pwelch(x,self.fs,window,f_bound=freqs))
+            else:
+                move[col] = self.move_epochs[col]
+        rest = pd.DataFrame()
+        cols = self.move_epochs.columns
+        for col in cols :
+            if type(col)==int:
+                rest[col] = self.rest_epochs[col].apply(lambda x:single_channel_pwelch(x,self.fs,window,f_bound=freqs))
+            else:
+                rest[col] = self.rest_epochs[col]
+        return move,rest,f    
+    def _epoch_PSD_average(self,df):
+        out = pd.DataFrame()
+        movements = list(self.muscleMapping.keys())
+        for m in movements:
+            d = df.query('movement == @m & type == "sEEG"')
+            numCols = [col for col in d if type(col) == int]
+
+            avgs = d[numCols].apply(lambda x: (np.array(np.mean(x.to_numpy(),axis=0))),axis=1)
+            d['avg'] = avgs
+            out = pd.concat([out,d],ignore_index=True)
+        targetKeys = [i for i in out.columns if type(i)==str]
+        return out[targetKeys]
+    def _globalPSD_normalize(self, channel_norm:bool=True):
+        """
+        normalize brain recroding PSDs across entire session
+        ----------
+        Parameters
+        ----------
+        channel_norm: bool, default is True
+            if True, return a dict of each normalized channel
+            if False, return an dict of each channel filled with the average PSD of all channels    
+        """
+        # # numCols = [col for col in df2 if type(col) == int]
+        # # sub_df2 = df2[numCols].copy()
+        # # new_numCols = [col+10 for col in sub_df2]
+        # aggregate = pd.DataFrame()
+        # aggregate['av1'] = df1['avg']
+        # aggregate['av2'] = df2['avg']
+        # av1 = aggregate['av1'].mean()
+        # av2 = aggregate['av2'].mean()
+        # out = np.mean([av1,av2],axis=0)
+        # # aggregate[new_numCols] = sub_df2[numCols]
+        data = {}
+        for i in self.session_data.data['sEEG'].values():
+            data.update(i)
+        
+        window = window = sig.get_window('hann',Nx=self.fs)
+        keys = []
+        psds = []
+        for k,v in data.items():
+            pxx = single_channel_pwelch(v,self.fs,window)
+            psds.append(pxx)
+            keys.append(k)
+        if channel_norm:
+            out = {k:v for k,v in zip(keys,psds)}    
+        else:
+            avg = np.average(psds,axis=0)
+            out = {k:avg for k in keys}
+        return out
+    
+    def normalizePSDs(self,data,avgs):
+        data['global'] = data['name'].map(avgs)
+        data['normalized'] = data['avg'] / data['global']
+        return data
+    def sliceGamma(self,df,slice):
+        df['normalized'] = df['normalized'].apply(lambda x: sliceArray(x,slice))
+        return df
+    def rsquared_analysis(self, freqRange:list = [1,300]):
+        motor, rest, f = self._sEEG_epochPSDs([freqRange[0],freqRange[1]+1])
+        gamma_slice = [np.where(f==65)[0][0],np.where(f==115)[0][0]+1]
+        motor = self._epoch_PSD_average(motor)
+        rest = self._epoch_PSD_average(rest)
+        g_av = self._globalPSD_normalize()
+        motor = self.normalizePSDs(motor,g_av)
+        rest = self.normalizePSDs(rest,g_av)
+        motor_gamma = self.sliceGamma(motor,gamma_slice)
+        rest_gamma = self.sliceGamma(rest,gamma_slice)
+        self.compute_cross_correlations(motor_gamma,rest_gamma)
+        return 0
+    def compute_cross_correlations(self,motor:pd.DataFrame,rest:pd.DataFrame):
+        out = {}
+        channels = motor['name'].to_list()
+        motor.set_index('name',inplace=True)
+        rest.set_index('name',inplace=True)
+        for i in self.muscleMapping.keys():
+            m_m = motor.query('movement==@i')
+            r_m = rest.query('movement==@i')
+            temp = {}
+            for chan in channels:
+                m = m_m.loc[chan,'normalized']
+                r = r_m.loc[chan,'normalized']
+def cross_correlation(a,b,num_a,num_b):
+    pass
+
+def single_channel_pwelch(array:np.ndarray,fs:int,window:np.ndarray,overlap=0.5,test=False,f_bound:list = [1,301]):
+    """
+    function to pass to a dataframe as a lambda function to perform columnwise PSDs on epoched data 
+    """
+    f,pxx = sig.welch(x=array,fs=fs,window=window,noverlap=int(fs*overlap),scaling='density')
+    if test:
+        fig,ax = method_plot(pxx,f,logy=True)
+        ax.axvline(f[301])
+        plt.show()
+    f,pxx = f[f_bound[0]:f_bound[1]],pxx[f_bound[0]:f_bound[1]]
+    return pxx
+
+def method_plot(y,x = False, log = False, logx = False,logy=False):
+    fig = plt.figure()
+    ax = plt.subplot(1,1,1)
+    if type(x) == bool:
+        ax.plot(y)
+    elif logx:
+        ax.semilogx(x,y)
+    elif logy:
+        ax.semilogy(x,y)
+    elif log:
+        ax.loglog(x,y)
+    else:
+        ax.plot(x,y)
+    return fig, ax
+
+
 class format_Stimulus_Presentation_Session():
-    def __init__(self,loc:Path,subject):
+    def __init__(self,loc:Path,subject,plot_stimuli=False):
         """
         Formats the 4 preprocessed filed from MATLAB into a data object
         
@@ -239,7 +442,7 @@ class format_Stimulus_Presentation_Session():
                 self.stimuli = self.reshapeStimuliMatrix(stimuli=stimuli)
             else:
                 print(f'{file} not loaded')
-        self.epoch_info = self.epochStimulusCode()
+        self.epoch_info = self.epochStimulusCode(plot_stimuli)
 
     def reshapeStimuliMatrix(self,stimuli):
         keys = stimuli[0].keys()
@@ -251,23 +454,24 @@ class format_Stimulus_Presentation_Session():
             temp.insert(0,{'code':value+1})
             output[key] = temp
         return output
-    def epochStimulusCode(self):
+    def epochStimulusCode(self,plot_states):
         data = self.states['StimulusCode']
         moveEpochs = {}
-        shift = 1000
+        onset_shift = 1000
+        offset_shift = 3000
         for stim in self.stimuli.values(): # get intervals for each of the stimuls codes
             code = stim[0]['code']
             stim_type = stim[6]
             loc = np.where(data==code)
             intervals = find_intervals(loc[0])
             for i,v in enumerate(intervals):
-                intervals[i] = [v[0]-shift,v[1]]
+                intervals[i] = [v[0]-onset_shift,v[1]+offset_shift]
 
             moveEpochs[stim_type] = intervals
         loc = np.where(data==0) # get intervals for stim code of zero (at rest)
         intervals = find_intervals(loc[0])
         for i,v in enumerate(intervals):
-                intervals[i] = [v[0],v[1]-shift]
+                intervals[i] = [offset_shift+v[0],v[1]-onset_shift]
         restEpochs = {}
         for k, int_set in moveEpochs.items():
             temp = []
@@ -277,6 +481,8 @@ class format_Stimulus_Presentation_Session():
             restEpochs[k] = temp                
 
         # epochs['rest'] = intervals[1:]
+        if plot_states:
+            self.plotStimuli(moveEpochs)
         return moveEpochs, restEpochs
     def _reshapeStates(self):
         states = {}
@@ -287,7 +493,17 @@ class format_Stimulus_Presentation_Session():
             else:
                 states[state] = val
         return states
-
+    def plotStimuli(self,epochs):
+        data = self.states['StimulusCode']
+        t = np.linspace(0,len(data)/2000,len(data))
+        fig=plt.figure()
+        ax = plt.subplot(1,1,1)
+        ax.plot(t,data)
+        for i in epochs.values():
+            for j in i:
+                ax.axvline(t[j[0]], c=(0,1,0))
+                ax.axvline(t[j[1]], c=(1,0,0))
+        plt.show()
 
 def alphaSortDict(a:dict)->dict:
     sortkeys = sorted(a)
@@ -329,3 +545,19 @@ def extractInterval(intervals,b):
         if i[0] ==b: 
             return i
     return None
+
+def sliceArray(array, interval):
+    return array[interval[0]:interval[1]]
+
+
+"""Script for debugging"""
+
+
+if __name__ == '__main__':
+    userPath = Path(os.path.expanduser('~'))
+    dataPath = userPath / "Box\Brunner Lab\DATA\SCAN_Mayo"
+    subject = 'BJH041'
+    session = 'pre_ablation'
+
+    a = SCAN_SingleSessionAnalysis(dataPath,subject,session,load=True)
+    a.rsquared_analysis()
