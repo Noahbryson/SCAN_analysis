@@ -1,0 +1,53 @@
+subject = "BJH041";
+session = "post_ablation";
+path = sprintf("C:/Users/nbrys/Box/Brunner Lab/DATA/SCAN_Mayo/%s",subject);
+brainDir = sprintf("%s/brain",path);
+dataDir = sprintf("%s/%s/analyzed",path,session);
+brain = load(sprintf("%s/brain_MNI.mat",brainDir));
+bipolarElectrodes = load(sprintf("%s/bipolar_electrodes.mat",brainDir)).bipolarElectrodes;
+% List all .mat files in the directory
+matFiles = dir(fullfile(dataDir, '*.mat'));
+% Initialize an empty structure
+r_sq_res = struct();
+% Loop through each file and load its contents into the structure
+for k = 1:length(matFiles)
+    % Extract the base file name (without extension)
+    [~, baseFileName, ~] = fileparts(matFiles(k).name);
+
+    % Load the file
+    loadedData = load(fullfile(dataDir, matFiles(k).name));
+    names = fieldnames(loadedData);
+    fieldValues = zeros(length(names), 1);
+    for i = 1:length(names)
+    fieldValues(i) = loadedData.(names{i});
+    end
+    for i=1:numel(names)
+        out(i).name = names{i};
+        out(i).r_sq = fieldValues(i);
+    end
+    % Assign the loaded data to a field in the structure
+    % The field name is the base file name
+    r_sq_res.(baseFileName(3:end)) = out;
+end
+conditions = fieldnames(r_sq_res);
+figure(1)
+surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",.2);
+hold on
+locs = bipolarElectrodes.e_loc;
+for i=1:length(r_sq_res.Hand_rsq)
+    res = r_sq_res.Hand_rsq(i).r_sq;
+    contact = locs(i,:);
+    intensity = abs(res);
+    colorFlag = res > 0;
+    if colorFlag
+        rgb = ([1,0,0]);
+    else
+        rgb = ([0,0,1]);
+    end
+    plotBallsOnVolume(gca,contact,rgb,intensity*2);
+end
+hold off
+% plotBallsOnVolume(gca,brain.tala.electrodes,[[1,234,36]/255],1);
+
+
+

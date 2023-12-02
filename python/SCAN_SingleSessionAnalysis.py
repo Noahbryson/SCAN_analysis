@@ -7,6 +7,7 @@ from filters import *
 import math
 import time
 import pickle
+from sklearn import metrics
 
 class SCAN_SingleSessionAnalysis():
     def __init__(self,path:str or Path,subject:str,session:str,fs:int=2000,load=True,epoch_by_movement:bool=True) -> None:
@@ -38,6 +39,7 @@ class SCAN_SingleSessionAnalysis():
         self.muscleMapping = {'1_Hand':['wristExtensor', 'ulnar'], '3_Foot':['TBA'],'2_Tongue':['tongue']}
         self.subjectDir = path / subject / session
         dataLoc = self.subjectDir / 'preprocessed'
+        self.saveDir = self.subjectDir / 'analyzed'
         self.session_data = format_Stimulus_Presentation_Session(dataLoc,subject,plot_stimuli=False)
         self.signalTypes = set(self.session_data.channels.values())
         
@@ -111,9 +113,9 @@ class SCAN_SingleSessionAnalysis():
             data = [v for k,v in sEEG.items() if k.find(traj)>-1]
             traj_data = {}
             for idx,vals in enumerate(data[0:-1]):
-                label = f'{traj}_{idx+1}-{idx+2}'
+                label = f'{traj}_{idx+1}_{idx+2}'
                 temp = self._bipolarReference(data[idx+1],vals)
-                temp = notch(temp,self.fs,60,30,1)
+                # temp = notch(temp,self.fs,60,30,1)
                 if gamma_power:
                     gamma = getGammaBand_sEEG(temp,self.fs,order=3)
                     bands = np.empty([len(bandSplit),len(gamma)])
@@ -279,7 +281,12 @@ class SCAN_SingleSessionAnalysis():
                 output[m_type] = epochOnsets
                 
         return output
-
+    def _validateSaveDir(self):
+        if not os.path.exists(self.saveDir):
+            os.mkdir(self.saveDir)
+            print(f'writing {self.saveDir} as save path')
+        else:
+            print('path exists')
     def _sEEG_epochPSDs(self,freqs):
         move = pd.DataFrame()
         cols = self.move_epochs.columns
@@ -303,14 +310,27 @@ class SCAN_SingleSessionAnalysis():
         out = pd.DataFrame()
         movements = list(self.muscleMapping.keys())
         for m in movements:
-            d = df.query('movement == @m & type == "sEEG"')
+            d = df.query('movement == @m & type == "sEEG"').copy()
             numCols = [col for col in d if type(col) == int]
 
             avgs = d[numCols].apply(lambda x: (np.array(np.mean(x.to_numpy(),axis=0))),axis=1)
+            std = d[numCols].apply(lambda x: (np.array(np.var(x.to_numpy(),axis=0))),axis=1)
             d['avg'] = avgs
+            d['std'] = std
             out = pd.concat([out,d],ignore_index=True)
         targetKeys = [i for i in out.columns if type(i)==str]
         return out[targetKeys]
+    def _epoch_PSD_std(self,move,rest):
+        strCols = ['name','type','movement']
+        out = pd.DataFrame()
+        res = pd.DataFrame()
+        res['ms'] = move['std']
+        res['rs'] = rest['std']
+        res = res.apply(lambda x: (np.mean(x.to_numpy())),axis=1)
+        out[strCols] = move[strCols]
+        out['avg_std'] = res # note this avg std is across both movement and rest trials, and is currently computed element wise across the frequency band
+        return out
+
     def _globalPSD_normalize(self, channel_norm:bool=True):
         """
         normalize brain recroding PSDs across entire session
@@ -353,10 +373,10 @@ class SCAN_SingleSessionAnalysis():
         data['global'] = data['name'].map(avgs)
         data['normalized'] = data['avg'] / data['global']
         return data
-    def sliceGamma(self,df,slice):
-        df['normalized'] = df['normalized'].apply(lambda x: sliceArray(x,slice))
+    def sliceGamma(self,df,slice,key):
+        df[key] = df[key].apply(lambda x: sliceArray(x,slice))
         return df
-    def rsquared_analysis(self, freqRange:list = [1,300]):
+    def rsquared_analysis(self, saveMAT:bool=False,freqRange:list = [1,300]):
         motor, rest, f = self._sEEG_epochPSDs([freqRange[0],freqRange[1]+1])
         gamma_slice = [np.where(f==65)[0][0],np.where(f==115)[0][0]+1]
         motor = self._epoch_PSD_average(motor)
@@ -364,25 +384,64 @@ class SCAN_SingleSessionAnalysis():
         g_av = self._globalPSD_normalize()
         motor = self.normalizePSDs(motor,g_av)
         rest = self.normalizePSDs(rest,g_av)
-        motor_gamma = self.sliceGamma(motor,gamma_slice)
-        rest_gamma = self.sliceGamma(rest,gamma_slice)
-        self.compute_cross_correlations(motor_gamma,rest_gamma)
+        motor_gamma = self.sliceGamma(motor,gamma_slice,key='normalized')
+        rest_gamma = self.sliceGamma(rest,gamma_slice,key='normalized')
+        stdev = self._epoch_PSD_std(motor,rest)
+        stdev_gamma = self.sliceGamma(stdev,gamma_slice,key='avg_std')
+        gamma_f = sliceArray(f,gamma_slice)
+        # for i in range(150,188):
+        #     fig, (ax1, ax2,ax3) = plt.subplots(3,1)
+
+        #     ax1.semilogy(f,motor_gamma.loc[i,'avg'],label="move")
+        #     ax1.semilogy(f,rest_gamma.loc[i,'avg'] ,label="rest")
+        #     ax3.plot(gamma_f,motor_gamma.loc[i,'normalized'],label='move')
+        #     ax3.plot(gamma_f,rest_gamma.loc[i,'normalized'] ,label='rest')
+        #     ax2.semilogy(f,motor_gamma.loc[i,'avg']*f,label="move")
+        #     ax2.semilogy(f,rest_gamma.loc[i,'avg']*f ,label="rest")
+        #     ax1.legend()
+        #     ax2.legend()
+        #     ax3.legend()
+        #     fig.suptitle(f'{motor_gamma.loc[i,"name"]},{motor_gamma.loc[i,"movement"]}')
+        #     plt.show()
+        r_sq = self.compute_cross_correlations(motor_gamma,rest_gamma,stdev_gamma)
+        if saveMAT:
+            self._validateSaveDir()
+            for entry,values in r_sq.items():
+                scio.savemat(self.saveDir/f'{entry}_rsq.mat',values)
         return 0
-    def compute_cross_correlations(self,motor:pd.DataFrame,rest:pd.DataFrame):
-        out = {}
+    def compute_cross_correlations(self,motor:pd.DataFrame,rest:pd.DataFrame,stdev:pd.DataFrame):
+        res = {}
         channels = motor['name'].to_list()
         motor.set_index('name',inplace=True)
         rest.set_index('name',inplace=True)
+        stdev.set_index('name',inplace=True)
         for i in self.muscleMapping.keys():
             m_m = motor.query('movement==@i')
             r_m = rest.query('movement==@i')
+            s_m = stdev.query('movement==@i')
             temp = {}
             for chan in channels:
                 m = m_m.loc[chan,'normalized']
                 r = r_m.loc[chan,'normalized']
-def cross_correlation(a,b,num_a,num_b):
-    pass
+                s = s_m.loc[chan,'avg_std']
+                r_sq = cross_correlation(m,r,s)
+                temp[chan] = r_sq
+            ref = temp.pop('REF_1_2')
+            res[i] = temp
+        
+        return res
 
+def cross_correlation(m:float or np.ndarray,r:float or np.ndarray,stdev:float or np.ndarray,num_r=10,num_m=10):
+    """
+    
+    """
+    rsq = metrics.r2_score(m,r)
+    N = (num_r*num_m)/((num_r+num_m)**2)
+    m_in = np.mean(m)
+    r_in = np.mean(r)
+    variance = np.var([m,r])
+    res = (m_in - r_in)**3 / (abs(m_in-r_in)*variance) * N
+    return res
 def single_channel_pwelch(array:np.ndarray,fs:int,window:np.ndarray,overlap=0.5,test=False,f_bound:list = [1,301]):
     """
     function to pass to a dataframe as a lambda function to perform columnwise PSDs on epoched data 
@@ -560,4 +619,4 @@ if __name__ == '__main__':
     session = 'pre_ablation'
 
     a = SCAN_SingleSessionAnalysis(dataPath,subject,session,load=True)
-    a.rsquared_analysis()
+    a.rsquared_analysis(saveMAT=True)
