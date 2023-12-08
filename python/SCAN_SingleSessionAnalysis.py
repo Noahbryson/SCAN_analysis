@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 import scipy.io as scio
-import scipy.stats as st
+import scipy.stats as stats
 import pandas as pd
 from filters import *
 import math
@@ -10,7 +10,7 @@ import pickle
 from sklearn import metrics
 
 class SCAN_SingleSessionAnalysis():
-    def __init__(self,path:str or Path,subject:str,session:str,fs:int=2000,load=True,epoch_by_movement:bool=True) -> None:
+    def __init__(self,path:str or Path,subject:str,session:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False) -> None:
         """
         Module containing functions for single session analysis of BCI2000 SCAN task
 
@@ -40,10 +40,11 @@ class SCAN_SingleSessionAnalysis():
         self.subjectDir = path / subject / session
         dataLoc = self.subjectDir / 'preprocessed'
         self.saveDir = self.subjectDir / 'analyzed'
-        self.session_data = format_Stimulus_Presentation_Session(dataLoc,subject,plot_stimuli=False)
+        self.session_data = format_Stimulus_Presentation_Session(dataLoc,subject,plot_stimuli=plot_stimuli)
         self.signalTypes = set(self.session_data.channels.values())
         
         self.session_data.data = self._processSignals(load)
+        self.sessionEMG = self.session_data.data['EMG']
         self.move_epochs = self._epochData('move')
         self.rest_epochs = self._epochData('rest')
         self.motor_onset = self._EMG_activity_epochs(testplots=False)
@@ -157,6 +158,21 @@ class SCAN_SingleSessionAnalysis():
         return out
     def _bipolarReference(self,a,b):
         return b-a  
+    def export_epochs(self,signalType,fname):
+        out = {}
+        for i in list(self.muscleMapping.keys()):
+            move = self.move_epochs.query("type==@signalType & movement==@i")
+            numCols = [i for i in move.columns if type(i)==int]
+            for row in move.iterrows():
+                temp = row[1][numCols].to_numpy()
+                # temp.insert(0, row[1]['movement'])
+                out[row[1]['name']] = temp
+            dir = self.saveDir
+            scio.savemat(dir/f'{fname}_{i}.mat',out)
+        return 0
+    def export_session_EMG(self):
+        dat = self.sessionEMG['EMG']
+        scio.savemat(self.saveDir/'fullEMG.mat',dat)
 
     def reshape_epochs(self):
         move = pd.DataFrame()
@@ -319,7 +335,7 @@ class SCAN_SingleSessionAnalysis():
             d['std'] = std
             out = pd.concat([out,d],ignore_index=True)
         targetKeys = [i for i in out.columns if type(i)==str]
-        return out[targetKeys]
+        return out[targetKeys], out
     def _epoch_PSD_std(self,move,rest):
         strCols = ['name','type','movement']
         out = pd.DataFrame()
@@ -370,40 +386,43 @@ class SCAN_SingleSessionAnalysis():
         return out
     
     def normalizePSDs(self,data,avgs):
-        data['global'] = data['name'].map(avgs)
-        data['normalized'] = data['avg'] / data['global']
-        return data
-    def sliceGamma(self,df,slice,key):
+        out = data.copy()
+        out['global'] = data.loc[:]['name'].map(avgs)
+        out['normalized'] = data.loc[:]['avg'] / out.loc[:]['global']
+        return out
+    def sliceDataFrame(self,df,slice,key):
         df[key] = df[key].apply(lambda x: sliceArray(x,slice))
         return df
-    def rsquared_analysis(self, saveMAT:bool=False,freqRange:list = [1,300]):
+    def rsquared_analysis(self, saveMAT:bool=False,freqRange:list = [1,300],plotSection:bool=False):
         motor, rest, f = self._sEEG_epochPSDs([freqRange[0],freqRange[1]+1])
         gamma_slice = [np.where(f==65)[0][0],np.where(f==115)[0][0]+1]
-        motor = self._epoch_PSD_average(motor)
-        rest = self._epoch_PSD_average(rest)
+        motor, fullMotor = self._epoch_PSD_average(motor)
+        rest, fullRest = self._epoch_PSD_average(rest)
         g_av = self._globalPSD_normalize()
         motor = self.normalizePSDs(motor,g_av)
         rest = self.normalizePSDs(rest,g_av)
-        motor_gamma = self.sliceGamma(motor,gamma_slice,key='normalized')
-        rest_gamma = self.sliceGamma(rest,gamma_slice,key='normalized')
+        motor_gamma = self.sliceDataFrame(motor,gamma_slice,key='normalized')
+        rest_gamma = self.sliceDataFrame(rest,gamma_slice,key='normalized')
         stdev = self._epoch_PSD_std(motor,rest)
-        stdev_gamma = self.sliceGamma(stdev,gamma_slice,key='avg_std')
-        gamma_f = sliceArray(f,gamma_slice)
-        # for i in range(150,188):
-        #     fig, (ax1, ax2,ax3) = plt.subplots(3,1)
+        stdev_gamma = self.sliceDataFrame(stdev,gamma_slice,key='avg_std')
+        if plotSection: #leave false , but did not want to remove entirely as is useful sanity checking step 
+            gamma_f = sliceArray(f,gamma_slice)
+            for i in range(150,188):
+                fig, (ax1, ax2,ax3) = plt.subplots(3,1)
 
-        #     ax1.semilogy(f,motor_gamma.loc[i,'avg'],label="move")
-        #     ax1.semilogy(f,rest_gamma.loc[i,'avg'] ,label="rest")
-        #     ax3.plot(gamma_f,motor_gamma.loc[i,'normalized'],label='move')
-        #     ax3.plot(gamma_f,rest_gamma.loc[i,'normalized'] ,label='rest')
-        #     ax2.semilogy(f,motor_gamma.loc[i,'avg']*f,label="move")
-        #     ax2.semilogy(f,rest_gamma.loc[i,'avg']*f ,label="rest")
-        #     ax1.legend()
-        #     ax2.legend()
-        #     ax3.legend()
-        #     fig.suptitle(f'{motor_gamma.loc[i,"name"]},{motor_gamma.loc[i,"movement"]}')
-        #     plt.show()
+                ax1.semilogy(f,motor_gamma.loc[i,'avg'],label="move")
+                ax1.semilogy(f,rest_gamma.loc[i,'avg'] ,label="rest")
+                ax3.plot(gamma_f,motor_gamma.loc[i,'normalized'],label='move')
+                ax3.plot(gamma_f,rest_gamma.loc[i,'normalized'] ,label='rest')
+                ax2.semilogy(f,motor_gamma.loc[i,'avg']*f,label="move")
+                ax2.semilogy(f,rest_gamma.loc[i,'avg']*f ,label="rest")
+                ax1.legend()
+                ax2.legend()
+                ax3.legend()
+                fig.suptitle(f'{motor_gamma.loc[i,"name"]},{motor_gamma.loc[i,"movement"]}')
+                plt.show()
         r_sq = self.compute_cross_correlations(motor_gamma,rest_gamma,stdev_gamma)
+        r_pval = self.compute_cross_correlation_significance(fullMotor,fullRest,gamma_slice)
         if saveMAT:
             self._validateSaveDir()
             for entry,values in r_sq.items():
@@ -430,6 +449,39 @@ class SCAN_SingleSessionAnalysis():
             res[i] = temp
         
         return res
+    def compute_cross_correlation_significance(self,motor:pd.DataFrame,rest:pd.DataFrame,frequency_slice:list):
+        res = {}
+        channels = motor['name'].to_list()
+        motor.set_index('name',inplace=True)
+        rest.set_index('name',inplace=True)
+        epochCols = [i for i in motor.columns if type(i)==int]
+        for i in self.muscleMapping.keys():
+            m_m = motor.query('movement==@i')
+            r_m = rest.query('movement==@i')
+            temp ={}
+            for chan in channels:
+                m = m_m.loc[chan,epochCols].to_numpy()
+                m_avg = epoch_powerAverage(m,frequency_slice)
+                r = r_m.loc[chan,epochCols].to_numpy()
+                r_avg = epoch_powerAverage(r,frequency_slice)
+                U,p = mannwhitneyU(m_avg,r_avg)
+                temp[chan] = np.array([U,p])
+            res[i] = temp
+        return res
+
+def epoch_powerAverage(a,f_slice):
+    averagePower = np.empty(len(a))
+    for i,epoch in enumerate(a):
+        if f_slice[1]:
+            # print('slicing')
+            averagePower[i]=np.mean(sliceArray(epoch,f_slice))
+        else: 
+            averagePower[i]=np.mean(epoch)
+    return averagePower
+
+def mannwhitneyU(a,b):
+    res = stats.mannwhitneyu(a,b)
+    return res
 
 def cross_correlation(m:float or np.ndarray,r:float or np.ndarray,stdev:float or np.ndarray,num_r=10,num_m=10):
     """
@@ -482,6 +534,7 @@ class format_Stimulus_Presentation_Session():
         subject: str
             individual subject ID
         """
+        self.root = loc.parent
         files = os.listdir(loc)
         for file in files:
             if file.find(subject)>-1:
@@ -546,7 +599,7 @@ class format_Stimulus_Presentation_Session():
     def _reshapeStates(self):
         states = {}
         for state, val in self.states.items():
-            mode = st.mode(val).count
+            mode = stats.mode(val).count
             if len(val) == mode:
                 pass # Exclude states that do not contain any information, ie array contains all of one value. 
             else:
@@ -562,6 +615,8 @@ class format_Stimulus_Presentation_Session():
             for j in i:
                 ax.axvline(t[j[0]], c=(0,1,0))
                 ax.axvline(t[j[1]], c=(1,0,0))
+        scio.savemat(self.root/'analyzed'/'stimcode.mat',{'stim':data})
+        scio.savemat(self.root/'analyzed'/'stimuli.mat',epochs)
         plt.show()
 
 def alphaSortDict(a:dict)->dict:
@@ -616,7 +671,9 @@ if __name__ == '__main__':
     userPath = Path(os.path.expanduser('~'))
     dataPath = userPath / "Box\Brunner Lab\DATA\SCAN_Mayo"
     subject = 'BJH041'
-    session = 'pre_ablation'
+    session = 'post_ablation'
 
-    a = SCAN_SingleSessionAnalysis(dataPath,subject,session,load=True)
-    a.rsquared_analysis(saveMAT=True)
+    a = SCAN_SingleSessionAnalysis(dataPath,subject,session,load=True,plot_stimuli=False)
+    # a.export_session_EMG()
+    # a.export_epochs(signalType='EMG',fname='emg')
+    a.rsquared_analysis(saveMAT=False)

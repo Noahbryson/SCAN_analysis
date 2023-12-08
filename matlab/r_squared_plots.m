@@ -1,5 +1,20 @@
 
-function r_squared_plots(subject,session)
+function r_squared_plots(subject,session,varargin)
+p = inputParser;
+azimuth = 180;
+elevation = 0;
+titleFlag = 0;
+opacity = 7; % percent opacity, set to 
+addParameter(p,'opacity',opacity)
+addParameter(p, 'azimuth', azimuth);
+addParameter(p, 'elevation', elevation);
+addParameter(p,'titleFlag',titleFlag);
+parse(p,varargin{:})
+azimuth = p.Results.azimuth;
+elevation = p.Results.elevation;
+titleFlag = p.Results.titleFlag;
+opacity = p.Results.opacity;
+faceAlpha = opacity/100;
 path = sprintf("C:/Users/nbrys/Box/Brunner Lab/DATA/SCAN_Mayo/%s",subject);
 brainDir = sprintf("%s/brain",path);
 dataDir = sprintf("%s/%s/analyzed",path,session);
@@ -13,21 +28,23 @@ r_sq_res = struct();
 for k = 1:length(matFiles)
     % Extract the base file name (without extension)
     [~, baseFileName, ~] = fileparts(matFiles(k).name);
-
-    % Load the file
-    loadedData = load(fullfile(dataDir, matFiles(k).name));
-    names = fieldnames(loadedData);
-    fieldValues = zeros(length(names), 1);
-    for i = 1:length(names)
-        fieldValues(i) = loadedData.(names{i});
+    if strfind(baseFileName,'rsq') > 0
+        % Load the file
+        loadedData = load(fullfile(dataDir, matFiles(k).name));
+        names = fieldnames(loadedData);
+        fieldValues = zeros(length(names), 1);
+        for i = 1:length(names)
+            val= loadedData.(names{i});
+            fieldValues(i) = val;
+        end
+        for i=1:numel(names)
+            out(i).name = names{i};
+            out(i).r_sq = fieldValues(i);
+        end
+        % Assign the loaded data to a field in the structure
+        % The field name is the base file name
+        r_sq_res.(baseFileName(3:end)) = out;
     end
-    for i=1:numel(names)
-        out(i).name = names{i};
-        out(i).r_sq = fieldValues(i);
-    end
-    % Assign the loaded data to a field in the structure
-    % The field name is the base file name
-    r_sq_res.(baseFileName(3:end)) = out;
 end
 if session == "post_ablation"
     load(sprintf("%s/ablation.mat",brainDir));
@@ -51,9 +68,10 @@ fig = figure;
 fig.WindowState = 'maximized';
 fig.Name = sprintf("%s %s",subject,session);
 for j=1:length(conditions)
-    subplot(3,1,j)
-
-    surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",.2);
+    plotIdx = j;
+    % View 1
+    subplot(3,3,plotIdx)
+    surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",faceAlpha);
     hold on
     locs = bipolarElectrodes.e_loc;
     for i=1:length(r_sq_res.(conditions{j}))
@@ -77,6 +95,78 @@ for j=1:length(conditions)
         end
 
     end
-    title(conditions{j})
+    if titleFlag
+        title(conditions{j})
+    end
     hold off
+    view(0,90)
+    % 'elevation',90,'azimuth',0 -> top
+    % 'elevation',0,'azimuth',180 -> front
+    % 'elevation',0,'azimuth',-90 -> left
+    % View 2
+    plotIdx=plotIdx+3;
+    subplot(3,3,plotIdx)
+    surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",faceAlpha);
+    hold on
+    locs = bipolarElectrodes.e_loc;
+    for i=1:length(r_sq_res.(conditions{j}))
+        res = r_sq_res.(conditions{j})(i).r_sq;
+        contact = locs(i,:);
+        intensity = abs(res);
+        colorFlag = res > 0;
+        if colorFlag
+            rgb = [1,0,0];
+        else
+            rgb = [0,0,1];
+        end
+        plotBallsOnVolume(gca,contact,rgb,intensity*3+1);
+    end
+    if session == "post_ablation"
+        for i=1:length(ablation_loc)
+            contact = brain.tala.electrodes(ablation_loc(i),:);
+            c = [0,1,0];
+            r = 1;
+            plotBallsOnVolume(gca,contact,c,r);
+        end
+
+    end
+    if titleFlag
+        title(conditions{j})
+    end    
+    hold off
+    view(180,0)
+    % View 3
+    plotIdx = plotIdx+3;
+    subplot(3,3,plotIdx)
+    surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",faceAlpha);
+    hold on
+    locs = bipolarElectrodes.e_loc;
+    for i=1:length(r_sq_res.(conditions{j}))
+        res = r_sq_res.(conditions{j})(i).r_sq;
+        contact = locs(i,:);
+        intensity = abs(res);
+        colorFlag = res > 0;
+        if colorFlag
+            rgb = [1,0,0];
+        else
+            rgb = [0,0,1];
+        end
+        plotBallsOnVolume(gca,contact,rgb,intensity*3+1);
+    end
+    if session == "post_ablation"
+        for i=1:length(ablation_loc)
+            contact = brain.tala.electrodes(ablation_loc(i),:);
+            c = [0,1,0];
+            r = 1;
+            plotBallsOnVolume(gca,contact,c,r);
+        end
+
+    end
+    if titleFlag
+        title(conditions{j})
+    end    
+    hold off
+    view(-90,0)
 end
+
+
