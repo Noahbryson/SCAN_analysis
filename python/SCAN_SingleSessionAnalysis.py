@@ -8,6 +8,7 @@ import math
 import time
 import pickle
 from sklearn import metrics
+from stat_methods import mannwhitneyU, cohendsD
 
 class SCAN_SingleSessionAnalysis():
     def __init__(self,path:str or Path,subject:str,session:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False) -> None:
@@ -422,7 +423,7 @@ class SCAN_SingleSessionAnalysis():
                 fig.suptitle(f'{motor_gamma.loc[i,"name"]},{motor_gamma.loc[i,"movement"]}')
                 plt.show()
         r_sq = self.compute_cross_correlations(motor_gamma,rest_gamma,stdev_gamma)
-        r_pval = self.compute_cross_correlation_significance(fullMotor,fullRest,gamma_slice)
+        r_pval, cohen = self.compute_power_distribution_significance(fullMotor,fullRest,gamma_slice)
         if saveMAT:
             self._validateSaveDir()
             for entry,values in r_sq.items():
@@ -449,8 +450,9 @@ class SCAN_SingleSessionAnalysis():
             res[i] = temp
         
         return res
-    def compute_cross_correlation_significance(self,motor:pd.DataFrame,rest:pd.DataFrame,frequency_slice:list):
+    def compute_power_distribution_significance(self,motor:pd.DataFrame,rest:pd.DataFrame,frequency_slice:list):
         res = {}
+        d_res = {}
         channels = motor['name'].to_list()
         motor.set_index('name',inplace=True)
         rest.set_index('name',inplace=True)
@@ -459,17 +461,26 @@ class SCAN_SingleSessionAnalysis():
             m_m = motor.query('movement==@i')
             r_m = rest.query('movement==@i')
             temp ={}
+            d_temp = {}
             for chan in channels:
-                m = m_m.loc[chan,epochCols].to_numpy()
-                m_avg = epoch_powerAverage(m,frequency_slice)
-                r = r_m.loc[chan,epochCols].to_numpy()
-                r_avg = epoch_powerAverage(r,frequency_slice)
-                U,p = mannwhitneyU(m_avg,r_avg)
-                temp[chan] = np.array([U,p])
+                if chan.find('REF_1_2')<0:
+                    m = m_m.loc[chan,epochCols].to_numpy()
+                    m_avg = epoch_powerAverage(m,frequency_slice)
+                    r = r_m.loc[chan,epochCols].to_numpy()
+                    r_avg = epoch_powerAverage(r,frequency_slice)
+                    U,p = mannwhitneyU(m_avg,r_avg)
+                    d = cohendsD(m_avg,r_avg)
+                    d_temp[chan] = np.array([d,p])
+                    temp[chan] = np.array([U,p])
             res[i] = temp
-        return res
+            d_res[i] = d_temp
+        return res, d_res
+    def returnSignificantChannels(self,data,dictLevels):
+        for i in dictLevels:
+            pass    
+        return 0
 
-def epoch_powerAverage(a,f_slice):
+def epoch_powerAverage(a,f_slice = [0]):
     averagePower = np.empty(len(a))
     for i,epoch in enumerate(a):
         if f_slice[1]:
@@ -479,9 +490,9 @@ def epoch_powerAverage(a,f_slice):
             averagePower[i]=np.mean(epoch)
     return averagePower
 
-def mannwhitneyU(a,b):
-    res = stats.mannwhitneyu(a,b)
-    return res
+
+
+
 
 def cross_correlation(m:float or np.ndarray,r:float or np.ndarray,stdev:float or np.ndarray,num_r=10,num_m=10):
     """

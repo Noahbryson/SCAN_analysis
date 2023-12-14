@@ -8,6 +8,7 @@ import scipy.stats as stat
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from colorOps import colorOps
 # from SCAN_SingleSessionAnalysis import SCAN_SingleSessionAnalysis
 class compare_sessions():
     def __init__(self,
@@ -16,6 +17,12 @@ class compare_sessions():
                  analysis_types:str or list = ['rsq','emg','seshEMG'],
                  session_labels: list = ['pre_ablation','post_ablation']
     ):
+        
+        cmykColors = [(52,3.83,0,0),(52,53.83,0,0),(2,53.83,0,0),(52,3.83,50,0)]
+        self.colorOp = colorOps()
+        self.cmap = [self.colorOp.cmyk2rgb(i) for i in cmykColors]
+
+
         if type(parentDir)==str:
             parentDir = Path(parentDir)
         if type(analysis_types)==str:
@@ -169,26 +176,15 @@ class compare_sessions():
             return self._annotate_trial(t,a,a_codes,ax,i,e)
         else:
             print('min number of points not clicked')
+
+
     def _sesh_EMG(self,export):
         print('begin')
-        pre = self.data['pre_ablation_full_emg']
-
-        muscleMapping = {'wristExtensor':'1_Hand', 'ulnar':'1_Hand', 'TBA':'3_Foot','tongue':'2_Tongue'}
-
-        pre_stimuli = scio.loadmat(self.dir/'pre_ablation/analyzed/stimuli.mat') 
-        pre_stimuli = remove_loading_bs_mat(pre_stimuli)
-        pre_State = scio.loadmat(self.dir/'pre_ablation/analyzed/stimcode.mat')
-        pre_State = remove_loading_bs_mat(pre_State)
-        post = self.data['post_ablation_full_emg']
-        post_stimuli = scio.loadmat(self.dir/'post_ablation/analyzed/stimuli.mat')
-        post_stimuli = remove_loading_bs_mat(post_stimuli)
-        pos_State = scio.loadmat(self.dir/'post_ablation/analyzed/stimcode.mat')
-        pos_State = remove_loading_bs_mat(pos_State)
-        mus = list(pre.keys())
+        muscleMapping, pre, pre_stimuli, pre_State, post, post_stimuli, pos_State, mus = self._load_sesh_emgs()
         if self.annotate:
             romPath = self.exportDir/'ROM_compare.csv'
             if os.path.exists(romPath) and self.override == False:
-                annotations = self.loadMovements()
+                annotations = self._loadMovements()
             else:
                 annotations = self.annotate_session_EMG(export,mus,muscleMapping,pre_stimuli,post_stimuli,pre,post)
         fig, axs = plt.subplots(4,2,sharex=True,figsize=(10,10))
@@ -264,7 +260,43 @@ class compare_sessions():
             ax[i].set_ylabel('Movement Duration (s)')
         plt.show()
         return 0
+    
+    def overlay_EMGs(self):
+        muscleMapping, pre, pre_stimuli, pre_State, post, post_stimuli, pos_State, mus = self._load_sesh_emgs()
+        fig, (ax, axx) = plt.subplots(1,2,sharex=True)
+        for idx,m in enumerate(mus):
+            c = self.cmap[idx]
+            a_codes = pre_stimuli[muscleMapping[m]]
+            b_codes = post_stimuli[muscleMapping[m]]
+            a=pre[m];b=post[m]
+            t=np.linspace(0,len(a)/2000,len(a))
+            plot_peakTraces(ax,t,a,a_codes,True,label=m,traceCol=c,onsetCol=c,labelStates=False)
+            ax.set_ylabel('z-score')
+            ax.set_title(f'{m} pre-ablation')
+            ax.legend()
+            plot_peakTraces(axx,t,b,b_codes,True,label=m,traceCol=c,onsetCol=c,labelStates=False)
+            axx.set_ylabel('z-score')
+            axx.legend()
+            axx.set_title(f'{m} post-ablation')
 
+
+
+
+
+    def _load_sesh_emgs(self):
+        pre = self.data['pre_ablation_full_emg']
+        muscleMapping = {'wristExtensor':'1_Hand', 'ulnar':'1_Hand', 'TBA':'3_Foot','tongue':'2_Tongue'}
+        pre_stimuli = scio.loadmat(self.dir/'pre_ablation/analyzed/stimuli.mat') 
+        pre_stimuli = remove_loading_bs_mat(pre_stimuli)
+        pre_State = scio.loadmat(self.dir/'pre_ablation/analyzed/stimcode.mat')
+        pre_State = remove_loading_bs_mat(pre_State)
+        post = self.data['post_ablation_full_emg']
+        post_stimuli = scio.loadmat(self.dir/'post_ablation/analyzed/stimuli.mat')
+        post_stimuli = remove_loading_bs_mat(post_stimuli)
+        pos_State = scio.loadmat(self.dir/'post_ablation/analyzed/stimcode.mat')
+        pos_State = remove_loading_bs_mat(pos_State)
+        mus = list(pre.keys())
+        return muscleMapping, pre, pre_stimuli, pre_State, post, post_stimuli, pos_State, mus
 
 
 
@@ -277,30 +309,29 @@ def long2wideDF(df,key1,key2,cols):
     
     df = pd.DataFrame(zip(a_l,a),columns=cols)
     return df
-def plot_peakTraces(ax,x,a,peaks,go=False,i=False,e=False):
+def plot_peakTraces(ax,x,a,peaks,go=False,i=False,e=False,label='_',traceCol = (0,0,0),onsetCol=(1,0,0),labelStates=True):
     if i and e:
-        ax.plot(x[i:e],a,label='_')
+        ax.plot(x[i:e],a,label=label,c=traceCol)
     else:
-        ax.plot(x,a,label='_')
-
+        ax.plot(x,a,label=label,c=traceCol)
+    _,ymax = ax.get_ybound()
+    lineHeight = 1
     if go:
         lab = True
         for p in peaks:
             if type(p) == np.ndarray or type(p) == list:
                 if len(p)>1:
-                    if lab:
-                        ax.axvline(x[p[0]],c=(1,0,0),label='onset')
-                        ax.axvline(x[p[1]],c=(0,0,0),label='offset')
+                    if lab and labelStates:
+                        ax.axvline(x[p[0]],c=onsetCol,label='onset', ymax=lineHeight/ymax)
+                        ax.axvline(x[p[1]],c=(0,0,0),label='offset', ymax=lineHeight/ymax)
                         lab = False
                     else:
-                        ax.axvline(x[p[0]],c=(1,0,0),label='_')
-                        ax.axvline(x[p[1]],c=(0,0,0),label='_')
+                        ax.axvline(x[p[0]],c=onsetCol,label='_', ymax=lineHeight/ymax)
+                        ax.axvline(x[p[1]],c=(0,0,0), label='_', ymax=lineHeight/ymax)
             else:
                 ax.axvline(x[p])
 def remove_loading_bs_mat(dat):
     return {k:v for k,v in dat.items() if k[0]!='_'}
-
-
 
 
 
@@ -313,5 +344,7 @@ if __name__ == '__main__':
     a = compare_sessions(dataPath,subject=subject)
     a.annotate = True
     a.override = False
-    a.analyzeMovements()
-    a.analyze_conditions(export = True,plot=True)
+    # a.analyzeMovements()
+    a.overlay_EMGs()
+    # a.analyze_conditions(export = False,plot=True)
+    plt.show()
