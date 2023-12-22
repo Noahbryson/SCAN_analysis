@@ -1,10 +1,16 @@
 
-function r_squared_plots(subject,session,varargin)
+function conditions = r_squared_plots(subject,session,varargin)
 p = inputParser;
 azimuth = 180;
 elevation = 0;
 titleFlag = 0;
-opacity = 7; % percent opacity, set to 
+opacity = 7; % percent opacity, set to
+forVideo = 0;
+full = 1;
+conditionIdx = 1;
+addParameter(p,'conditionIdx',conditionIdx);
+addParameter(p,'forVideo',forVideo);
+addParameter(p,'full',full);
 addParameter(p,'opacity',opacity)
 addParameter(p, 'azimuth', azimuth);
 addParameter(p, 'elevation', elevation);
@@ -14,7 +20,10 @@ azimuth = p.Results.azimuth;
 elevation = p.Results.elevation;
 titleFlag = p.Results.titleFlag;
 opacity = p.Results.opacity;
+forVideo = p.Results.forVideo;
+full = p.Results.full;
 faceAlpha = opacity/100;
+conditionIdx = p.Results.conditionIdx;
 path = sprintf("C:/Users/nbrys/Box/Brunner Lab/DATA/SCAN_Mayo/%s",subject);
 brainDir = sprintf("%s/brain",path);
 dataDir = sprintf("%s/%s/analyzed",path,session);
@@ -65,108 +74,138 @@ end
 
 conditions = fieldnames(r_sq_res);
 fig = figure;
-fig.WindowState = 'maximized';
-fig.Name = sprintf("%s %s",subject,session);
-for j=1:length(conditions)
-    plotIdx = j;
-    % View 1
-    subplot(3,3,plotIdx)
-    surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",faceAlpha);
-    hold on
-    locs = bipolarElectrodes.e_loc;
-    for i=1:length(r_sq_res.(conditions{j}))
-        res = r_sq_res.(conditions{j})(i).r_sq;
-        contact = locs(i,:);
-        intensity = abs(res);
-        colorFlag = res > 0;
-        if colorFlag
-            rgb = [1,0,0];
-        else
-            rgb = [0,0,1];
-        end
-        plotBallsOnVolume(gca,contact,rgb,intensity*3+1);
-    end
-    if session == "post_ablation"
-        for i=1:length(ablation_loc)
-            contact = brain.tala.electrodes(ablation_loc(i),:);
-            c = [0,1,0];
-            r = 1;
-            plotBallsOnVolume(gca,contact,c,r);
-        end
-
-    end
-    if titleFlag
-        title(conditions{j})
-    end
-    hold off
-    view(0,90)
-    % 'elevation',90,'azimuth',0 -> top
-    % 'elevation',0,'azimuth',180 -> front
-    % 'elevation',0,'azimuth',-90 -> left
-    % View 2
-    plotIdx=plotIdx+3;
-    subplot(3,3,plotIdx)
-    surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",faceAlpha);
-    hold on
-    locs = bipolarElectrodes.e_loc;
-    for i=1:length(r_sq_res.(conditions{j}))
-        res = r_sq_res.(conditions{j})(i).r_sq;
-        contact = locs(i,:);
-        intensity = abs(res);
-        colorFlag = res > 0;
-        if colorFlag
-            rgb = [1,0,0];
-        else
-            rgb = [0,0,1];
-        end
-        plotBallsOnVolume(gca,contact,rgb,intensity*3+1);
-    end
-    if session == "post_ablation"
-        for i=1:length(ablation_loc)
-            contact = brain.tala.electrodes(ablation_loc(i),:);
-            c = [0,1,0];
-            r = 1;
-            plotBallsOnVolume(gca,contact,c,r);
-        end
-
-    end
-    if titleFlag
-        title(conditions{j})
-    end    
-    hold off
-    view(180,0)
-    % View 3
-    plotIdx = plotIdx+3;
-    subplot(3,3,plotIdx)
-    surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",faceAlpha);
-    hold on
-    locs = bipolarElectrodes.e_loc;
-    for i=1:length(r_sq_res.(conditions{j}))
-        res = r_sq_res.(conditions{j})(i).r_sq;
-        contact = locs(i,:);
-        intensity = abs(res);
-        colorFlag = res > 0;
-        if colorFlag
-            rgb = [1,0,0];
-        else
-            rgb = [0,0,1];
-        end
-        plotBallsOnVolume(gca,contact,rgb,intensity*3+1);
-    end
-    if session == "post_ablation"
-        for i=1:length(ablation_loc)
-            contact = brain.tala.electrodes(ablation_loc(i),:);
-            c = [0,1,0];
-            r = 1;
-            plotBallsOnVolume(gca,contact,c,r);
-        end
-
-    end
-    if titleFlag
-        title(conditions{j})
-    end    
-    hold off
-    view(-90,0)
+if full
+    fig.WindowState = 'maximized';
 end
+fig.Name = sprintf("%s %s",subject,session);
 
+if forVideo == 1
+    set(fig,'Color',[1 1 1]);
+    surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",faceAlpha);
+    hold on
+    locs = bipolarElectrodes.e_loc;
+    for i=1:length(r_sq_res.(conditions{conditionIdx}))
+        res = r_sq_res.(conditions{conditionIdx})(i).r_sq;
+        contact = locs(i,:);
+        intensity = abs(res);
+        colorFlag = res > 0;
+        if colorFlag
+            rgb = [1,0,0];
+        else
+            rgb = [0,0,1];
+        end
+        plotBallsOnVolume(gca,contact,rgb,intensity*3+1);
+    end
+    if titleFlag
+        title(conditions{conditionIdx})
+    end
+else
+    for j=1:length(conditions)
+        plotIdx = j;
+        % View 1
+        subplot(3,3,plotIdx)
+        axis tight
+        axis equal
+        surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",faceAlpha);
+        hold on
+        locs = bipolarElectrodes.e_loc;
+        for i=1:length(r_sq_res.(conditions{j}))
+            res = r_sq_res.(conditions{j})(i).r_sq;
+            contact = locs(i,:);
+            intensity = abs(res);
+            colorFlag = res > 0;
+            if colorFlag
+                rgb = [1,0,0];
+            else
+                rgb = [0,0,1];
+            end
+            plotBallsOnVolume(gca,contact,rgb,intensity*3+1);
+        end
+        if session == "post_ablation"
+            for i=1:length(ablation_loc)
+                contact = brain.tala.electrodes(ablation_loc(i),:);
+                c = [0,1,0];
+                r = 1;
+                plotBallsOnVolume(gca,contact,c,r);
+            end
 
+        end
+        if titleFlag
+            title(conditions{j})
+        end
+        hold off
+        view(0,90)
+        % 'elevation',90,'azimuth',0 -> top
+        % 'elevation',0,'azimuth',180 -> front
+        % 'elevation',0,'azimuth',-90 -> left
+        % View 2
+        plotIdx=plotIdx+3;
+        subplot(3,3,plotIdx)
+        axis tight
+        axis equal
+        surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",faceAlpha);
+        hold on
+        locs = bipolarElectrodes.e_loc;
+        for i=1:length(r_sq_res.(conditions{j}))
+            res = r_sq_res.(conditions{j})(i).r_sq;
+            contact = locs(i,:);
+            intensity = abs(res);
+            colorFlag = res > 0;
+            if colorFlag
+                rgb = [1,0,0];
+            else
+                rgb = [0,0,1];
+            end
+            plotBallsOnVolume(gca,contact,rgb,intensity*3+1);
+        end
+        if session == "post_ablation"
+            for i=1:length(ablation_loc)
+                contact = brain.tala.electrodes(ablation_loc(i),:);
+                c = [0,1,0];
+                r = 1;
+                plotBallsOnVolume(gca,contact,c,r);
+            end
+
+        end
+        if titleFlag
+            title(conditions{j})
+        end
+        hold off
+        view(180,0)
+        % View 3
+        plotIdx = plotIdx+3;
+        subplot(3,3,plotIdx)
+        axis tight
+        axis equal
+        surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",faceAlpha);
+        hold on
+        locs = bipolarElectrodes.e_loc;
+        for i=1:length(r_sq_res.(conditions{j}))
+            res = r_sq_res.(conditions{j})(i).r_sq;
+            contact = locs(i,:);
+            intensity = abs(res);
+            colorFlag = res > 0;
+            if colorFlag
+                rgb = [1,0,0];
+            else
+                rgb = [0,0,1];
+            end
+            plotBallsOnVolume(gca,contact,rgb,intensity*3+1);
+        end
+        if session == "post_ablation"
+            for i=1:length(ablation_loc)
+                contact = brain.tala.electrodes(ablation_loc(i),:);
+                c = [0,1,0];
+                r = 1;
+                plotBallsOnVolume(gca,contact,c,r);
+            end
+
+        end
+        if titleFlag
+            title(conditions{j})
+        end
+        hold off
+        view(-90,0)
+    end
+
+end

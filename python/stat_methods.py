@@ -60,8 +60,40 @@ def cohendsD(a, b):
         return (m1-m2)/stdPooled
 
 # TODO: Implement the other statistical measures in stats module for use here. 
-def ROC(a,b):
-    return 0
+def calc_ROC(a,b,plot=False):
+    from sklearn.metrics import roc_curve,roc_auc_score
+    import matplotlib.pyplot as plt
+    """
+    ----------
+    Parameters
+    ----------
+    a: array-like
+        experimental distribution to test
+    b: array-like
+        baseline distribution to test
+    """
+    an = len(a)
+    bn = len(b)
+    aLab = [1 for _ in range(an)]
+    bLab = [0 for _ in range(bn)]
+    scores = list(a)
+    scores.extend(b)
+    lab = aLab
+    lab.extend(bLab)
+    fpr, tpr, thresh = roc_curve(lab,scores)
+    auc = roc_auc_score(lab,scores)
+    if plot:
+        plt.figure()
+        plt.plot(fpr, tpr, color='darkorange', lw=2, label='ROC curve')
+        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title(f'Receiver Operating Characteristic (ROC)\nAUC:{auc}')
+        plt.legend(loc="lower right")
+        plt.show()
+    return auc
 
 def biserialSpearmanCorrelation(a,b):
     # implementation of this will require broadband gamma timeseries power

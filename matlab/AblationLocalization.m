@@ -1,9 +1,18 @@
 function fig = AblationLocalization(subject,varargin)
+% 'elevation',90,'azimuth',0 -> top
+% 'elevation',0,'azimuth',180 -> front
+% 'elevation',0,'azimuth',-90 -> left
 p = inputParser;
 opacity = 7; % percent opacity, set to 
 addParameter(p,'opacity',opacity)
+forVideo = 0;
+addParameter(p,'forVideo',forVideo);
+full = 1;
+addParameter(p,'full',full);
 parse(p,varargin{:})
 opacity = p.Results.opacity;
+forVideo = p.Results.forVideo;
+fullscreen = p.Results.full;
 faceAlpha = opacity/100;
 path = sprintf("C:/Users/nbrys/Box/Brunner Lab/DATA/SCAN_Mayo/%s",subject);
 brainDir = sprintf("%s/brain",path);
@@ -21,12 +30,15 @@ for j=1:length(ablation)
     end
 end
 
-fig = figure;
+fig = figure(1);
+if fullscreen
 fig.WindowState = 'maximized';
+end
 lab = sprintf("%s %Ablation Location",subject);
 fig.Name = lab;
-c = [0,0,0];
+c = [0.7,0,0];
 r = 2;
+if forVideo == 0
 subplot(1,3,1)
 surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",faceAlpha);
 hold on
@@ -60,4 +72,20 @@ for i=1:length(ablation_loc)
 end
 hold off
 view(-90,0)
+else
+set(fig,'Color',[1 1 1]);
+surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255 255 255]/255,"FaceAlpha",faceAlpha);
+hold on
+for i=1:length(ablation_loc)
+    contact = brain.tala.electrodes(ablation_loc(i),:);
+    % c = [0,1,0];
+    % r = 2;
+    plotBallsOnVolume(gca,contact,c,r);
+end
+hold off
+
+view(180,0)
+axis tight;
+axis equal;
+axis manual;
 end

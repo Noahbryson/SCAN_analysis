@@ -18,7 +18,7 @@ class compare_sessions():
                  session_labels: list = ['pre_ablation','post_ablation']
     ):
         
-        cmykColors = [(52,3.83,0,0),(52,53.83,0,0),(2,53.83,0,0),(52,3.83,50,0)]
+        cmykColors = [(52,3.83,0,10),(52,53.83,0,10),(2,53.83,0,10),(52,3.83,50,10)]
         self.colorOp = colorOps()
         self.cmap = [self.colorOp.cmyk2rgb(i) for i in cmykColors]
 
@@ -187,7 +187,7 @@ class compare_sessions():
                 annotations = self._loadMovements()
             else:
                 annotations = self.annotate_session_EMG(export,mus,muscleMapping,pre_stimuli,post_stimuli,pre,post)
-        fig, axs = plt.subplots(4,2,sharex=True,figsize=(10,10))
+        fig, axs = plt.subplots(4,2,sharex=True,sharey='row',figsize=(10,10))
         for idx,m in enumerate(mus):
             ax =  axs[idx][0]
             axx = axs[idx][1]
@@ -240,11 +240,12 @@ class compare_sessions():
         data = data.applymap(ast.literal_eval)
         data['m'] = movements['m']
         data.set_index('m',inplace=True)
-        fig, ax = plt.subplots(1,len(muscles),num='move stats',sharey=True)
+        fig, ax = plt.subplots(1,1,num='move stats',sharey=True)
         for i,m in enumerate(muscles):
             cols = ['condition','duration']
             target = data.loc[m]
             target = long2wideDF(target,'pre duration','post duration',cols)
+            target['xax'] = [m for _ in range(target.shape[0])]
             pre = data.loc[m,'pre duration']
             print(m,' ',target['condition'].value_counts())
             post = data.loc[m,'post duration']
@@ -252,32 +253,32 @@ class compare_sessions():
             x = ['pre duration','post duration']
             avg = pd.DataFrame(zip(x,y),columns = cols)
             # sns.swarmplot(target,x='condition',y='duration',ax=ax[i],size=3,c=(0,0,0))
-            sns.violinplot(target,x='condition',y='duration',ax=ax[i])
+            sns.violinplot(target,x= 'xax',hue='condition',y='duration',ax=ax,split=True,inner='quart',fill=True)
 
             # sns.swarmplot(avg,x='condition',y='duration',ax=ax[i],size=5, c = (1,0,0))
             res,p = stat.ranksums(pre,post)
-            ax[i].set_title(f'{m}\nrank: {res}\np: {p}')
-            ax[i].set_ylabel('Movement Duration (s)')
-        plt.show()
+            # ax.set_title(f'{m}\nrank: {res}\np: {p}')
+            ax.set_ylabel('Movement Duration (s)')
+        # plt.show()
         return 0
     
-    def overlay_EMGs(self):
+    def overlay_EMGs(self, sliceVals=[False,False]):
         muscleMapping, pre, pre_stimuli, pre_State, post, post_stimuli, pos_State, mus = self._load_sesh_emgs()
-        fig, (ax, axx) = plt.subplots(1,2,sharex=True)
+        fig, (ax, axx) = plt.subplots(1,2,sharex=True,sharey=True)
         for idx,m in enumerate(mus):
             c = self.cmap[idx]
             a_codes = pre_stimuli[muscleMapping[m]]
             b_codes = post_stimuli[muscleMapping[m]]
             a=pre[m];b=post[m]
             t=np.linspace(0,len(a)/2000,len(a))
-            plot_peakTraces(ax,t,a,a_codes,True,label=m,traceCol=c,onsetCol=c,labelStates=False)
+            plot_peakTraces(ax,t,a,a_codes,True,label=m,traceCol=c,onsetCol=c,labelStates=False,i=sliceVals[0],e=sliceVals[-1])
             ax.set_ylabel('z-score')
-            ax.set_title(f'{m} pre-ablation')
+            ax.set_title('Pre-ablation')
             ax.legend()
-            plot_peakTraces(axx,t,b,b_codes,True,label=m,traceCol=c,onsetCol=c,labelStates=False)
+            plot_peakTraces(axx,t,b,b_codes,True,label=m,traceCol=c,onsetCol=c,labelStates=False,i=sliceVals[0],e=sliceVals[-1])
             axx.set_ylabel('z-score')
             axx.legend()
-            axx.set_title(f'{m} post-ablation')
+            axx.set_title('Post-ablation')
 
 
 
@@ -310,9 +311,11 @@ def long2wideDF(df,key1,key2,cols):
     df = pd.DataFrame(zip(a_l,a),columns=cols)
     return df
 def plot_peakTraces(ax,x,a,peaks,go=False,i=False,e=False,label='_',traceCol = (0,0,0),onsetCol=(1,0,0),labelStates=True):
-    if i and e:
-        ax.plot(x[i:e],a,label=label,c=traceCol)
+    if e:
+        sliceFlag = True
+        ax.plot(x[i:e],a[i:e],label=label,c=traceCol)
     else:
+        sliceFlag = False
         ax.plot(x,a,label=label,c=traceCol)
     _,ymax = ax.get_ybound()
     lineHeight = 1
@@ -321,7 +324,11 @@ def plot_peakTraces(ax,x,a,peaks,go=False,i=False,e=False,label='_',traceCol = (
         for p in peaks:
             if type(p) == np.ndarray or type(p) == list:
                 if len(p)>1:
-                    if lab and labelStates:
+                    if sliceFlag and (p[0] < i or p[1]<i) :
+                        pass
+                    elif sliceFlag and (p[0] > e or p[1]>e) :
+                        break
+                    elif lab and labelStates:
                         ax.axvline(x[p[0]],c=onsetCol,label='onset', ymax=lineHeight/ymax)
                         ax.axvline(x[p[1]],c=(0,0,0),label='offset', ymax=lineHeight/ymax)
                         lab = False
@@ -344,7 +351,10 @@ if __name__ == '__main__':
     a = compare_sessions(dataPath,subject=subject)
     a.annotate = True
     a.override = False
-    # a.analyzeMovements()
+    a.analyzeMovements()
     a.overlay_EMGs()
-    # a.analyze_conditions(export = False,plot=True)
+    t = [5000,105000]
+    a.overlay_EMGs(sliceVals=t)
+    a.analyze_conditions(export = False,plot=True)
     plt.show()
+

@@ -7,8 +7,9 @@ from filters import *
 import math
 import time
 import pickle
+import seaborn as sns
 from sklearn import metrics
-from stat_methods import mannwhitneyU, cohendsD
+from stat_methods import mannwhitneyU, cohendsD, calc_ROC
 
 class SCAN_SingleSessionAnalysis():
     def __init__(self,path:str or Path,subject:str,session:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False) -> None:
@@ -33,6 +34,7 @@ class SCAN_SingleSessionAnalysis():
         """
         if type(path) == str:
             path = Path(path)
+        print(f'')
         self.main_dir = path
         self.subject = subject
         self.session = session
@@ -40,7 +42,7 @@ class SCAN_SingleSessionAnalysis():
         self.muscleMapping = {'1_Hand':['wristExtensor', 'ulnar'], '3_Foot':['TBA'],'2_Tongue':['tongue']}
         self.subjectDir = path / subject / session
         dataLoc = self.subjectDir / 'preprocessed'
-        self.saveDir = self.subjectDir / 'analyzed'
+        self.saveRoot = self.subjectDir / 'analyzed'
         self.session_data = format_Stimulus_Presentation_Session(dataLoc,subject,plot_stimuli=plot_stimuli)
         self.signalTypes = set(self.session_data.channels.values())
         
@@ -58,6 +60,7 @@ class SCAN_SingleSessionAnalysis():
     def _processSignals(self,load=True):
         if 'processed.pkl' in os.listdir(self.subjectDir / 'preprocessed') and load==True:
             signalGroups = readPickle(self.subjectDir / 'preprocessed' /'processed.pkl')
+            print('loaded prepocessed data')
         else:
             signalGroups = {}
             for sig in self.signalTypes:
@@ -73,12 +76,13 @@ class SCAN_SingleSessionAnalysis():
                     data = self.processEEG(data)
                 signalGroups[sigType] = data
             writePickle(signalGroups,self.subjectDir / 'preprocessed')
+            print('preprocessed the data')
         return signalGroups
     def processECG(self,ECG:dict):
         output ={}
         output['ECG'] = ECG
         return output
-    def processEMG(self,EMG:dict):
+    def processEMG(self,EMG:dict,plotWorkFlow=False):
         muscles = set([i.split('_')[0] for i in EMG.keys()])
         hold = {}
         output = {}
@@ -89,14 +93,29 @@ class SCAN_SingleSessionAnalysis():
             n = notch(bp,self.fs,60,30,1)
             n = notch(n,self.fs,120,60,1)
             n = notch(n,self.fs,180,90,1)
-            log10= np.abs(n)
-            log10 = np.log10(log10)
+            abs_n= np.abs(n)
+            log10 = np.log10(abs_n)
             z = zscore_normalize(log10)
             # smoothz = savitzky_golay(z,window_size=int(self.fs/2)-1,order = 0)
             smoothz = moving_average_np(z,window_size=int(self.fs/2))
             # temp = hilbert_env(temp)
             expon_z = math.e**smoothz
             hold[muscle] = expon_z - 1
+            if plotWorkFlow:
+                fig,(a1,a2,a3,a4,a5,a6)  = plt.subplots(6,1, sharex=True)
+                a1.plot(n)
+                a1.set_ylabel('filt')
+                a2.plot(abs_n)
+                a2.set_ylabel('abs')
+                a3.plot(log10)
+                a3.set_ylabel('log10')
+                a4.plot(z)
+                a4.set_ylabel('z score')
+                a5.plot(smoothz)
+                a5.set_ylabel('smoothing')
+                a6.plot(expon_z-1)
+                a6.set_ylabel('exponentiated')
+                plt.show()
             # hold[muscle] = temp
         output['EMG'] = hold
         return output
@@ -168,12 +187,12 @@ class SCAN_SingleSessionAnalysis():
                 temp = row[1][numCols].to_numpy()
                 # temp.insert(0, row[1]['movement'])
                 out[row[1]['name']] = temp
-            dir = self.saveDir
+            dir = self.saveRoot
             scio.savemat(dir/f'{fname}_{i}.mat',out)
         return 0
     def export_session_EMG(self):
         dat = self.sessionEMG['EMG']
-        scio.savemat(self.saveDir/'fullEMG.mat',dat)
+        scio.savemat(self.saveRoot/'fullEMG.mat',dat)
 
     def reshape_epochs(self):
         move = pd.DataFrame()
@@ -298,12 +317,17 @@ class SCAN_SingleSessionAnalysis():
                 output[m_type] = epochOnsets
                 
         return output
-    def _validateSaveDir(self):
-        if not os.path.exists(self.saveDir):
-            os.mkdir(self.saveDir)
-            print(f'writing {self.saveDir} as save path')
+    def _validateSaveDir(self,subDir=''):
+        if subDir != '':
+            saveDir = self.saveRoot/subDir
+        else:
+            saveDir=self.saveRoot
+        if not os.path.exists(saveDir):
+            os.mkdir(saveDir)
+            print(f'writing {saveDir} as save path')
         else:
             print('path exists')
+        return saveDir
     def _sEEG_epochPSDs(self,freqs):
         move = pd.DataFrame()
         cols = self.move_epochs.columns
@@ -423,12 +447,14 @@ class SCAN_SingleSessionAnalysis():
                 fig.suptitle(f'{motor_gamma.loc[i,"name"]},{motor_gamma.loc[i,"movement"]}')
                 plt.show()
         r_sq = self.compute_cross_correlations(motor_gamma,rest_gamma,stdev_gamma)
-        r_pval, cohen = self.compute_power_distribution_significance(fullMotor,fullRest,gamma_slice)
+        p, U_res, d_res,roc_res = self.compute_power_distribution_significance(fullMotor,fullRest,gamma_slice)
         if saveMAT:
-            self._validateSaveDir()
+            saveDir = self._validateSaveDir()
             for entry,values in r_sq.items():
-                scio.savemat(self.saveDir/f'{entry}_rsq.mat',values)
-        return 0
+                scio.savemat(saveDir/f'{entry}_rsq.mat',values)
+        return r_sq, p, U_res, d_res,roc_res
+    
+    
     def compute_cross_correlations(self,motor:pd.DataFrame,rest:pd.DataFrame,stdev:pd.DataFrame):
         res = {}
         channels = motor['name'].to_list()
@@ -451,8 +477,10 @@ class SCAN_SingleSessionAnalysis():
         
         return res
     def compute_power_distribution_significance(self,motor:pd.DataFrame,rest:pd.DataFrame,frequency_slice:list):
-        res = {}
+        U_res = {}
         d_res = {}
+        roc_res = {}
+        p_res = {}
         channels = motor['name'].to_list()
         motor.set_index('name',inplace=True)
         rest.set_index('name',inplace=True)
@@ -462,6 +490,8 @@ class SCAN_SingleSessionAnalysis():
             r_m = rest.query('movement==@i')
             temp ={}
             d_temp = {}
+            roc_temp = {}
+            p_temp = {}
             for chan in channels:
                 if chan.find('REF_1_2')<0:
                     m = m_m.loc[chan,epochCols].to_numpy()
@@ -470,16 +500,98 @@ class SCAN_SingleSessionAnalysis():
                     r_avg = epoch_powerAverage(r,frequency_slice)
                     U,p = mannwhitneyU(m_avg,r_avg)
                     d = cohendsD(m_avg,r_avg)
-                    d_temp[chan] = np.array([d,p])
-                    temp[chan] = np.array([U,p])
-            res[i] = temp
+                    roc = calc_ROC(m_avg,r_avg,plot=False)
+                    d_temp[chan] = d
+                    temp[chan] = U
+                    roc_temp[chan] = roc
+                    p_temp[chan] = p
+            U_res[i] = temp
             d_res[i] = d_temp
-        return res, d_res
-    def returnSignificantChannels(self,data,dictLevels):
-        for i in dictLevels:
-            pass    
-        return 0
+            roc_res[i] = roc_temp
+            p_res[i] = p_temp
+        return p_res, U_res, d_res,roc_res
+    def returnSignificantChannels(self,data,alpha=0.05):
+        res = {}
+        for cond, items in data.items():
+            temp = []
+            for c, p in items.items():
+                if p < alpha:
+                    temp.append(c)
+            res[cond] = temp
+        targetTrajs = 'IJKLM'
+        with open('sig_chans.txt', 'w') as fp:
+            for cond in res:
+                count = 0
+                fp.write(f'\n{cond}\n')
+                for i in res[cond]:
+                    fp.write(f'{i},')
+                    if targetTrajs.find(i[0].upper()) >-1:
+                        count +=1
+                print(f'{cond} num target chans: {count}')
+        return res
+    
 
+    def aggregateResults(self,r_sq, p, U_res, d_res,roc_res,saveMAT=False):
+        sigDict = self.returnSignificantChannels(p,alpha = 0.05)
+        sig_r = {}
+        sig_d = {}
+        sig_roc = {}
+        sig_U = {}
+        for cond, chans in sigDict.items():
+            sig_r   [cond]= parseDictViaKeys(   r_sq[cond], keys=chans)
+            sig_d   [cond]= parseDictViaKeys(  d_res[cond], keys=chans)
+            sig_roc [cond]= parseDictViaKeys(roc_res[cond], keys=chans)
+            sig_U   [cond]= parseDictViaKeys(  U_res[cond], keys=chans)
+        outs = [sig_r,sig_d,sig_roc,sig_U,p]
+        lab = ['rsq','cohen','roc','U','pval']
+        if saveMAT:
+            for i,l in zip(outs,lab):
+                self.dict2mat(i,name=f'{l}_sig')
+        return sig_r,sig_d,sig_roc,sig_U
+    
+    def visualizeMetrics(self,sig_r,sig_d,sig_roc,sig_U,numBins=10):
+        labels = ['task','chan','metric','value']
+        temp = []
+        out = pd.DataFrame()
+        tasks = list(sig_r.keys())
+        for i,task in enumerate(tasks):
+            
+            for k in sig_r[task].keys():
+                cohenNorm = max(list(sig_d[task].values()))
+                temp.append([task,k,'R_squared',(sig_r[task][k]+1)/2])
+                temp.append([task,k,"Cohen's d",((sig_d[task][k]/cohenNorm)+1)/2])
+                # temp.append([task,k,'rsq',sig_r[task][k]])
+                # temp.append([task,k,'cohen',sig_d[task][k]])
+                temp.append([task,k,'AUC',sig_roc[task][k]])
+                # temp.append([task,k,'U',sig_U[task][k]/100])
+            # fig = plt.figure(num=f'{self.session} {task}_count')
+            # ax = plt.gca()
+            df = pd.DataFrame(temp,columns=labels)
+            # df.sort_values('value',inplace=True)
+            df.sort_values('metric',inplace=True)
+            # sns.stripplot(df,x='metric',y='value',ax=ax)
+            # ax.set_title('Metrics')
+            # ax.tick_params(labelrotation=90)
+
+            fig = plt.figure(num=f'{self.session} {task}_hist')
+            ax = plt.gca()
+            lab = task.split('_')
+            lab2 = self.session.split('_')
+            sns.histplot(df,x='value',hue='metric',ax=ax,stat='percent',kde=True,bins=numBins)
+            ax.set_title(f'{lab[-1]}, {lab2[0]}-{lab2[1]} ')
+            ax.axvline(0.5,label='Increase Boundary',c=(0,0,0),linestyle='--')
+            out = pd.concat([out,df],ignore_index=True)
+        # for a in ax.flat:
+        #     a.label_outer()
+        plt.show()
+        return out
+
+
+    def dict2mat(self,dic,name=''):
+        saveDir = self._validateSaveDir(subDir='significance')
+        for entry,values in dic.items():
+            scio.savemat(saveDir/f'{name}_{entry}.mat',values)
+        
 def epoch_powerAverage(a,f_slice = [0]):
     averagePower = np.empty(len(a))
     for i,epoch in enumerate(a):
@@ -493,7 +605,9 @@ def epoch_powerAverage(a,f_slice = [0]):
 
 
 
-
+def parseDictViaKeys(data,keys):
+    res = {k:data[k] for k in keys}
+    return res
 def cross_correlation(m:float or np.ndarray,r:float or np.ndarray,stdev:float or np.ndarray,num_r=10,num_m=10):
     """
     
@@ -564,7 +678,7 @@ class format_Stimulus_Presentation_Session():
                 stimuli = stimuli['stim_codes']
                 self.stimuli = self.reshapeStimuliMatrix(stimuli=stimuli)
             else:
-                print(f'{file} not loaded')
+                print(f'{file} not loaded on init')
         self.epoch_info = self.epochStimulusCode(plot_stimuli)
 
     def reshapeStimuliMatrix(self,stimuli):
@@ -682,9 +796,14 @@ if __name__ == '__main__':
     userPath = Path(os.path.expanduser('~'))
     dataPath = userPath / "Box\Brunner Lab\DATA\SCAN_Mayo"
     subject = 'BJH041'
-    session = 'post_ablation'
+    session = 'pre_ablation'
+    # session = 'post_ablation'
+
 
     a = SCAN_SingleSessionAnalysis(dataPath,subject,session,load=True,plot_stimuli=False)
     # a.export_session_EMG()
     # a.export_epochs(signalType='EMG',fname='emg')
-    a.rsquared_analysis(saveMAT=False)
+    r_sq, p, U_res, d_res,roc_res = a.rsquared_analysis(saveMAT=False)
+    sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p, U_res, d_res,roc_res,saveMAT=False)
+    # a.scatterMetrics(sig_r,sig_d,sig_roc,sig_U) # significant Channels
+    a.visualizeMetrics(r_sq, d_res,roc_res,U_res,numBins=40) # all channels
