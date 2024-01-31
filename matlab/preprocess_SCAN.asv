@@ -25,8 +25,7 @@ tgt = fname_sub(1);
 tgt = strcat(tgt,'_1.dat');
 [data2,states2,parms2] = load_bcidat(strcat(tDir,'/',tgt{1}),1);
 [data2,states2] = resampleSecondaryData(data2,states2,parms2.SamplingRate.NumericValue,parms.SamplingRate.NumericValue,0);
-[DATA1,DATA2,STATES1,STATES2] = alignSecondaryData(data, data2,states,states2);
-[data,states] = aggregateData(DATA1,DATA2,STATES1,STATES2);
+[data2,states2] = alignSecondaryData(data, data2,states,states2);
 end
 [keys,type] = labelDataChannels(data,channels); % generate labels from data and channel description
 saveDir = strcat(tDir,'/preprocessed'); % path to save dir for preprocessed files
@@ -43,9 +42,6 @@ function channels = loadElectrodeChannels(dir)
     otps = detectImportOptions(fname);
     channels = readtable(fname,otps);
 end
-
-
-
 
 
 function [X,Y] = resampleSecondaryData(data,states, fs, target_fs,plot)
@@ -88,14 +84,14 @@ sync2 = abs(sync2-mean(sync2))/max((sync2));
 thresh1 = 3*std(sync1);
 thresh2 = 3*std(sync2);
 
-% figure(1)
-% hold on
-% plot(sync1)
-% yline(thresh1)
-% plot(sync2)
-% yline(thresh2)
-% legend('sync1','thresh1','sync2','thresh2')
-% hold off
+figure(1)
+hold on
+plot(sync1)
+yline(thresh1)
+plot(sync2)
+yline(thresh2)
+legend('sync1','thresh1','sync2','thresh2')
+hold off
 x1 = detectThresholdCrossing(sync1, thresh1, 3500);
 x2 = detectThresholdCrossing(sync2, thresh2, 3500);
 avg_offset = cast(mean(x1-x2),'int32');
@@ -141,35 +137,13 @@ else % primary data leading secondary data
         temp = truncateTimeseries(states1.(fields{i}),avg_offset);
         STATES1.(fields{i}) = temp;
     end
-
-
-
-
-
-end
+figure(2)
 sync1 = double(STATES1.DC04);
 sync1 = abs(sync1-mean(sync1))/max((sync1));
 sync2 = double(STATES2.DigitalInput4);
 sync2 = abs(sync2-mean(sync2))/max((sync2));
-figure(2)
-hold on
-plot(sync1)
-yline(thresh1)
-plot(sync2)
-yline(thresh2)
-legend('sync1','thresh1','sync2','thresh2')
-hold off
-end
 
-function [data, states] = aggregateData(DATA1,DATA2,STATES1,STATES2)
-addedDims = size(DATA2,2);
-data = zeros(size(DATA1,1),size(DATA1,2)+addedDims);
-data(:,1:size(DATA1,2)) = DATA1;
-for i=1:addedDims
-    idx = size(DATA1,2) + i;
-    data(:,idx) = DATA2(:,i);
 end
-states = STATES1;
 end
 
 

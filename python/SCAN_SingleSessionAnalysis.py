@@ -418,7 +418,7 @@ class SCAN_SingleSessionAnalysis():
     def sliceDataFrame(self,df,slice,key):
         df[key] = df[key].apply(lambda x: sliceArray(x,slice))
         return df
-    def rsquared_analysis(self, saveMAT:bool=False,freqRange:list = [1,300],plotSection:bool=False):
+    def taskPowerCorrelation_analysis(self, saveMAT:bool=False,freqRange:list = [1,300],plotSection:bool=False):
         motor, rest, f = self._sEEG_epochPSDs([freqRange[0],freqRange[1]+1])
         gamma_slice = [np.where(f==65)[0][0],np.where(f==115)[0][0]+1]
         motor, fullMotor = self._epoch_PSD_average(motor)
@@ -470,7 +470,7 @@ class SCAN_SingleSessionAnalysis():
                 m = m_m.loc[chan,'normalized']
                 r = r_m.loc[chan,'normalized']
                 s = s_m.loc[chan,'avg_std']
-                r_sq = cross_correlation(m,r,s)
+                r_sq = signed_cross_correlation(m,r,s)
                 temp[chan] = r_sq
             ref = temp.pop('REF_1_2')
             res[i] = temp
@@ -510,7 +510,7 @@ class SCAN_SingleSessionAnalysis():
             roc_res[i] = roc_temp
             p_res[i] = p_temp
         return p_res, U_res, d_res,roc_res
-    def returnSignificantChannels(self,data,alpha=0.05):
+    def returnSignificantChannels_perTask(self,data,alpha=0.05,saveTXT=False):
         res = {}
         for cond, items in data.items():
             temp = []
@@ -519,20 +519,35 @@ class SCAN_SingleSessionAnalysis():
                     temp.append(c)
             res[cond] = temp
         targetTrajs = 'IJKLM'
-        with open('sig_chans.txt', 'w') as fp:
-            for cond in res:
-                count = 0
-                fp.write(f'\n{cond}\n')
-                for i in res[cond]:
-                    fp.write(f'{i},')
-                    if targetTrajs.find(i[0].upper()) >-1:
-                        count +=1
-                print(f'{cond} num target chans: {count}')
+        if saveTXT:
+            saveDir = self._validateSaveDir(subDir='metrics')
+            with open(saveDir/'sig_chans.txt', 'w') as fp:
+                for cond in res:
+                    count = 0
+                    fp.write(f'\n{cond}\n')
+                    for i in res[cond]:
+                        fp.write(f'{i},')
+                        if targetTrajs.find(i[0].upper()) >-1:
+                            count +=1
+                    print(f'{cond} num target chans: {count}')
         return res
     
+    def returnSignificantLocations(self,pvalDict,alpha):
+        data = self.reshapeEffect(pvalDict)
+        sig = []
+        no_sig = []
+        for channel, vals in data.items():
+            ps = list(vals.values())
+            ps = np.array(ps)
+            if np.any(ps < alpha):
+                sig.append(channel)
+            else:
+                no_sig.append(channel)
+        return sig, no_sig
+            
 
     def aggregateResults(self,r_sq, p, U_res, d_res,roc_res,saveMAT=False):
-        sigDict = self.returnSignificantChannels(p,alpha = 0.05)
+        sigDict = self.returnSignificantChannels_perTask(p,alpha = 0.05)
         sig_r = {}
         sig_d = {}
         sig_roc = {}
@@ -587,10 +602,91 @@ class SCAN_SingleSessionAnalysis():
         return out
 
 
-    def dict2mat(self,dic,name=''):
-        saveDir = self._validateSaveDir(subDir='significance')
+    def dict2mat(self,dic,name='', saveFolder='significance'):
+        saveDir = self._validateSaveDir(saveFolder)
         for entry,values in dic.items():
             scio.savemat(saveDir/f'{name}_{entry}.mat',values)
+
+    def visualizeEffectCluster(self, effectDict, dataSubset:list=[],title=''):
+        """plot effect sizes for the 3 movements as 3D scatter plot. 
+            x-axis is hand
+            y-axis is foot
+            z-axis is tongue
+            ---------
+            Parameters
+            ---------
+            effectDict: dictionary
+                output dictionary of one variable from taskPowerCorrelation_analysis"""
+        data = self.reshapeEffect(effectDict)
+        if len(dataSubset) > 0:
+            print('parsing via keys')
+            data = parseDictViaKeys(data=data,keys=dataSubset)
+        n_samp = len(data)
+        print(f'{title} num_chans:{n_samp}')
+        xyz = np.empty([n_samp,3])
+        fig = plt.figure()
+        ax = fig.add_subplot(projection='3d')
+        chan = ''
+        c = (0,0,1)
+        cflag = False
+        legend = []
+        for i,(k,v) in enumerate(data.items()):
+            # locs = v.keys()
+            h = v['Hand'] # x -> hand
+            f = v['Foot'] # y -> foot
+            t = v['Tongue'] # z -> tongue
+            if chan != k[0:2]:
+                chan = k[0:2]
+                if cflag:
+                    c = (i/n_samp,0,1)
+                    cflag = False
+                else:
+                    c = (.4,i/n_samp,0)
+                    cflag = True
+                
+                legend.append(chan)
+                lab = chan
+            else:
+                lab = '_'
+            if(h > 0.15 and f > 0.15 and t >0.15):
+                print(f'{k}: hand {round(h,2)} foot {round(f,2)} tongue {round(t,2)}')
+                size = 50
+            else: 
+                size = 10
+            ax.scatter(xs=h,ys=f,zs=t,s = size,c=c,label=lab)
+            xyz[i][0] = h
+            xyz[i][1] = f
+            xyz[i][2] = t
+        
+        # ax.scatter(xs=xyz[:,0],ys=xyz[:,1],zs=xyz[:,2])
+        axLine = np.linspace(-1,1,10)
+        offAx = np.linspace(0,0,10)
+        ax.plot(xs=axLine,ys=offAx, zs=offAx, c=(0,0,0))
+        ax.plot(xs=offAx, ys=axLine,zs=offAx, c=(0,0,0))
+        ax.plot(xs=offAx, ys=offAx, zs=axLine, c=(0,0,0))
+        ax.set_xlabel('hand')
+        ax.set_ylabel('foot')
+        ax.set_zlabel('tongue')
+        ax.set_title(f'{title} data cluster')
+        # ax.set_xlim(0,1)
+        # ax.set_ylim(0,1)
+        # ax.set_zlim(0,1)
+        ax.legend()
+        ax.grid(False)
+        # plt.grid(visible=False)
+        # sns.despine()
+        
+    def reshapeEffect(self,effect):
+        out = {}
+        for k,v in effect.items():
+            for c, r in v.items():
+                temp = {k.split('_')[-1]:r}
+                if c in out.keys():
+                    out[c].update(temp)
+                else:
+                    out[c] = temp
+        return out
+
         
 def epoch_powerAverage(a,f_slice = [0]):
     averagePower = np.empty(len(a))
@@ -601,14 +697,10 @@ def epoch_powerAverage(a,f_slice = [0]):
         else: 
             averagePower[i]=np.mean(epoch)
     return averagePower
-
-
-
-
 def parseDictViaKeys(data,keys):
     res = {k:data[k] for k in keys}
     return res
-def cross_correlation(m:float or np.ndarray,r:float or np.ndarray,stdev:float or np.ndarray,num_r=10,num_m=10):
+def signed_cross_correlation(m:float or np.ndarray,r:float or np.ndarray,stdev:float or np.ndarray,num_r=10,num_m=10):
     """
     
     """
@@ -635,15 +727,22 @@ def method_plot(y,x = False, log = False, logx = False,logy=False):
     fig = plt.figure()
     ax = plt.subplot(1,1,1)
     if type(x) == bool:
-        ax.plot(y)
-    elif logx:
+        x = np.linspace(0,1,len(y))
+        xlab = 'au'
+    else:
+        xlab = 'actual scale'
+    if logx:
         ax.semilogx(x,y)
+        ax.set_xlabel(xlab)
     elif logy:
         ax.semilogy(x,y)
+        ax.set_xlabel(xlab)
     elif log:
         ax.loglog(x,y)
+        ax.set_xlabel(xlab)
     else:
         ax.plot(x,y)
+        ax.set_xlabel(xlab)
     return fig, ax
 
 
@@ -796,14 +895,18 @@ if __name__ == '__main__':
     userPath = Path(os.path.expanduser('~'))
     dataPath = userPath / "Box\Brunner Lab\DATA\SCAN_Mayo"
     subject = 'BJH041'
-    session = 'pre_ablation'
-    # session = 'post_ablation'
+    # session = 'pre_ablation'
+    session = 'post_ablation'
 
 
     a = SCAN_SingleSessionAnalysis(dataPath,subject,session,load=True,plot_stimuli=False)
     # a.export_session_EMG()
     # a.export_epochs(signalType='EMG',fname='emg')
-    r_sq, p, U_res, d_res,roc_res = a.rsquared_analysis(saveMAT=False)
-    sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p, U_res, d_res,roc_res,saveMAT=False)
+    r_sq, p_vals, U_res, d_res,roc_res = a.taskPowerCorrelation_analysis(saveMAT=False)
+    a.visualizeEffectCluster(r_sq,title='all channels')
+    sig_chans, nonsig_chans = a.returnSignificantLocations(p_vals,alpha=0.05)
+    a.visualizeEffectCluster(r_sq,sig_chans,title='significant channels')
+    plt.show()
+    sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
     # a.scatterMetrics(sig_r,sig_d,sig_roc,sig_U) # significant Channels
     a.visualizeMetrics(r_sq, d_res,roc_res,U_res,numBins=40) # all channels
