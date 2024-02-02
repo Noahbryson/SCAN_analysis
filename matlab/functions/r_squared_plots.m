@@ -1,5 +1,6 @@
 
 function conditions = r_squared_plots(subject,session,varargin)
+%% varagin handling
 p = inputParser;
 azimuth = 180;
 elevation = 0;
@@ -24,6 +25,7 @@ forVideo = p.Results.forVideo;
 full = p.Results.full;
 faceAlpha = opacity/100;
 conditionIdx = p.Results.conditionIdx;
+%% function
 path = sprintf("C:/Users/nbrys/Box/Brunner Lab/DATA/SCAN_Mayo/%s",subject);
 brainDir = sprintf("%s/brain",path);
 dataDir = sprintf("%s/%s/analyzed",path,session);

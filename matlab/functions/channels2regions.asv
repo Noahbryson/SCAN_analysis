@@ -1,0 +1,6 @@
+function regions,map = channels2regions(path,labels)
+% path: filepath to map.csv file
+% lines: lines in the .csv to read. Default is [2,inf]
+map = channel_rosa_map(path);
+
+end

@@ -1,4 +1,6 @@
 import os
+import csv
+import h5py
 from pathlib import Path
 import scipy.io as scio
 import scipy.stats as stats
@@ -9,6 +11,7 @@ import time
 import pickle
 import seaborn as sns
 from sklearn import metrics
+from sklearn.cluster import KMeans
 from stat_methods import mannwhitneyU, cohendsD, calc_ROC
 
 class SCAN_SingleSessionAnalysis():
@@ -39,13 +42,24 @@ class SCAN_SingleSessionAnalysis():
         self.subject = subject
         self.session = session
         self.fs = fs
-        self.muscleMapping = {'1_Hand':['wristExtensor', 'ulnar'], '3_Foot':['TBA'],'2_Tongue':['tongue']}
+
+        if os.path.exists(self.main_dir/self.subject/'muscle_mapping.csv'):
+            with open(self.main_dir/self.subject/'muscle_mapping.csv', 'r') as fp:
+                reader = csv.reader(fp)
+                self.muscleMapping = {rows[0]:rows[1:] for rows in reader}
+        else:
+            self.muscleMapping = {'1_Hand':['wristExtensor', 'ulnar'], '3_Foot':['TBA'],'2_Tongue':['tongue']}
         self.subjectDir = path / subject / session
         dataLoc = self.subjectDir / 'preprocessed'
         self.saveRoot = self.subjectDir / 'analyzed'
-        self.session_data = format_Stimulus_Presentation_Session(dataLoc,subject,plot_stimuli=plot_stimuli)
+        if session.find('aggregate')>-1:
+            HDF = True
+        else:
+            HDF = False
+        self.session_data = format_Stimulus_Presentation_Session(dataLoc,subject,plot_stimuli=plot_stimuli,HDF=HDF)
         self.signalTypes = set(self.session_data.channels.values())
-        
+        self.colorPalletBest = [(62/255,108/255,179/255), (27/255,196/255,225/255), (129/255,199/255,238/255),(44/255,184/255,149/255),(0,129/255,145/255), (193/255,189/255,47/255),(200/255,200/255,200/255)]
+
         self.session_data.data = self._processSignals(load)
         self.sessionEMG = self.session_data.data['EMG']
         self.move_epochs = self._epochData('move')
@@ -607,7 +621,7 @@ class SCAN_SingleSessionAnalysis():
         for entry,values in dic.items():
             scio.savemat(saveDir/f'{name}_{entry}.mat',values)
 
-    def visualizeEffectCluster(self, effectDict, dataSubset:list=[],title=''):
+    def visualizeEffectCluster(self, effectDict, thresh, dataSubset:list=[],title='',for_subplot:bool=False, ax: bool or plt.axes=False, cluster:bool= False, num_clusters=5):
         """plot effect sizes for the 3 movements as 3D scatter plot. 
             x-axis is hand
             y-axis is foot
@@ -616,7 +630,21 @@ class SCAN_SingleSessionAnalysis():
             Parameters
             ---------
             effectDict: dictionary
-                output dictionary of one variable from taskPowerCorrelation_analysis"""
+                output dictionary of one variable from taskPowerCorrelation_analysis
+            thresh: float
+                minimum value of effect size required for each condition to be flagged as an intereffector
+                not this value is a manual test and not an effective substitute for clustering
+            dataSubset: list
+                list of keys to parse the effectDict dictionary by. keys in this list are included in the visualization, keys not in the list are excluded.
+            title: str
+                title string of the axes created by this function.
+            for_subplot: bool
+                wheter or not this function is being displayed in a different subplot.
+            ax : bool or plt.axes
+                axes passed if for_subplot==True, else false
+            cluster: bool
+                flag to perform knn clustering on the data    
+            """
         data = self.reshapeEffect(effectDict)
         if len(dataSubset) > 0:
             print('parsing via keys')
@@ -624,17 +652,24 @@ class SCAN_SingleSessionAnalysis():
         n_samp = len(data)
         print(f'{title} num_chans:{n_samp}')
         xyz = np.empty([n_samp,3])
-        fig = plt.figure()
-        ax = fig.add_subplot(projection='3d')
+        if not for_subplot:
+            fig = plt.figure(f'{title} effect projection')
+            ax = fig.add_subplot(projection='3d')
         chan = ''
         c = (0,0,1)
         cflag = False
         legend = []
+        threshLabs = [] 
+        if cluster:
+            cluster_res = self.kmeans_cluster(data,num_clusters)
+            cmap = [self.colorPalletBest[i] for i in range(len(np.unique(cluster_res)))]
         for i,(k,v) in enumerate(data.items()):
             # locs = v.keys()
-            h = v['Hand'] # x -> hand
+            h = v['Hand'] # x -> hand   
             f = v['Foot'] # y -> foot
             t = v['Tongue'] # z -> tongue
+            xyz[i] = np.array([h,f,t])
+            euclid = np.sqrt(h**2 + f**2 + t**2)
             if chan != k[0:2]:
                 chan = k[0:2]
                 if cflag:
@@ -648,18 +683,28 @@ class SCAN_SingleSessionAnalysis():
                 lab = chan
             else:
                 lab = '_'
-            if(h > 0.15 and f > 0.15 and t >0.15):
-                print(f'{k}: hand {round(h,2)} foot {round(f,2)} tongue {round(t,2)}')
+            if(h > thresh and f > thresh and t > thresh):
+                
+                print(f'{k}: {euclid} dist\nhand {round(h,2)} foot {round(f,2)} tongue {round(t,2)}')
+                if cluster:
+                    threshLabs.append([k,cluster_res[i]])
+                    print(f'cluster {cluster_res[i]}: {cmap[cluster_res[i]]}')
+                else:
+                    threshLabs.append(k)
+
                 size = 50
             else: 
                 size = 10
+            if cluster:
+                c_lab = cluster_res[i]
+                c = cmap[c_lab]
             ax.scatter(xs=h,ys=f,zs=t,s = size,c=c,label=lab)
-            xyz[i][0] = h
-            xyz[i][1] = f
-            xyz[i][2] = t
-        
+        if cluster:   
+            threshDict = {k[0]:[v,k[1]] for k,v in zip(threshLabs,xyz)}
+        else:
+            threshDict = {k:v for k,v in zip(threshLabs,xyz)}
         # ax.scatter(xs=xyz[:,0],ys=xyz[:,1],zs=xyz[:,2])
-        axLine = np.linspace(-1,1,10)
+        axLine = np.linspace(-thresh*10,thresh*10,10)
         offAx = np.linspace(0,0,10)
         ax.plot(xs=axLine,ys=offAx, zs=offAx, c=(0,0,0))
         ax.plot(xs=offAx, ys=axLine,zs=offAx, c=(0,0,0))
@@ -675,6 +720,43 @@ class SCAN_SingleSessionAnalysis():
         ax.grid(False)
         # plt.grid(visible=False)
         # sns.despine()
+        return ax,threshDict
+    
+    def kmeans_cluster(self,data:dict,num_clusters:int):
+        channels = data.keys()
+        n_samp = len(data)
+        xyz = np.empty([n_samp,3])
+        for i,(k,v) in enumerate(data.items()):
+            # locs = v.keys()
+            h = v['Hand'] # x -> hand
+            f = v['Foot'] # y -> foot
+            t = v['Tongue'] # z -> tongue
+            xyz[i] = np.array([h,f,t])
+
+
+        cluster = KMeans(n_clusters=num_clusters,random_state=0, n_init='auto')
+        cluster.fit(xyz)
+        labels = cluster.labels_
+        cluters_accessed = len(np.unique(labels))        
+        return labels
+
+
+    def plotAllEffects(self,threshholds:list,):
+        """
+        ----------
+        Parameters
+        ----------
+            effectSizeDict: list(dict)
+                list of dictionaries containing the different effects for each channel and each test run. 
+            threshholds: list
+                list of minimum values of effect size required, paired to effect size types, for each condition to be flagged as an intereffector.
+                index of this must be equal to index of effectSizeDict passed
+                not this value is a manual test and not an effective substitute for clustering
+            dataSubset: list
+                list of keys to parse the effectDict dictionary by. keys in this list are included in the visualization, keys not in the list are excluded.
+            title: str
+                title string of the axes created by this function."""
+        pass
         
     def reshapeEffect(self,effect):
         out = {}
@@ -747,7 +829,7 @@ def method_plot(y,x = False, log = False, logx = False,logy=False):
 
 
 class format_Stimulus_Presentation_Session():
-    def __init__(self,loc:Path,subject,plot_stimuli=False):
+    def __init__(self,loc:Path,subject,plot_stimuli=False,HDF:bool=False):
         """
         Formats the 4 preprocessed filed from MATLAB into a data object
         
@@ -762,8 +844,23 @@ class format_Stimulus_Presentation_Session():
         files = os.listdir(loc)
         for file in files:
             if file.find(subject)>-1:
-                data = scio.loadmat(loc/file,mat_dtype=True,simplify_cells=True)
-                self.data = data['signals']
+                if HDF:
+                    # need to write HDF5 parser. 
+                    # with h5py.File(loc/file, 'r') as f:
+                    #     # data = {key: f[key][()] for key in f.keys()}
+                    #     data = f['agg_signals'][()]
+                    data = {}
+                    hf = h5py.File(loc/file,'r')
+                    temp = hf['agg_signals']
+                    keys = list(temp.keys())
+                    for k in keys:
+                        data[k] = temp[k][0]
+                    self.data = data
+                    print(0)
+
+                else:    
+                    data = scio.loadmat(loc/file,mat_dtype=True,simplify_cells=True)
+                    self.data = data['signals']
             elif file.find('channeltypes')>-1:
                 channels = scio.loadmat(loc/file,mat_dtype=True,simplify_cells=True)
                 self.channels = channels['chan_types']
@@ -894,18 +991,18 @@ def sliceArray(array, interval):
 if __name__ == '__main__':
     userPath = Path(os.path.expanduser('~'))
     dataPath = userPath / "Box\Brunner Lab\DATA\SCAN_Mayo"
-    subject = 'BJH041'
+    subject = 'BJH046'
     # session = 'pre_ablation'
-    session = 'post_ablation'
-
+    # session = 'post_ablation'
+    session = 'aggregate'
 
     a = SCAN_SingleSessionAnalysis(dataPath,subject,session,load=True,plot_stimuli=False)
     # a.export_session_EMG()
     # a.export_epochs(signalType='EMG',fname='emg')
     r_sq, p_vals, U_res, d_res,roc_res = a.taskPowerCorrelation_analysis(saveMAT=False)
-    a.visualizeEffectCluster(r_sq,title='all channels')
+    a.visualizeEffectCluster(d_res,1,title='all channels',cluster=True)
     sig_chans, nonsig_chans = a.returnSignificantLocations(p_vals,alpha=0.05)
-    a.visualizeEffectCluster(r_sq,sig_chans,title='significant channels')
+    a.visualizeEffectCluster(d_res,1,dataSubset=sig_chans,title='significant channels',cluster=True, num_clusters=5)
     plt.show()
     sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
     # a.scatterMetrics(sig_r,sig_d,sig_roc,sig_U) # significant Channels
