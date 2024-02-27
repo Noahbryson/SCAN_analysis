@@ -6,6 +6,11 @@ def calc_rmse(a,b):
     rmse = np.sqrt(np.sum((a-b)**2)/N)
     return rmse
 
+
+def euclidean_distance(data:np.array or list):
+    return np.sqrt(np.sum(np.square(data)))
+
+
 def calc_rSquared(a,b):
     RSS = np.sum((a-b)**2)
     TSS = np.sum((a-np.mean(a))**2)

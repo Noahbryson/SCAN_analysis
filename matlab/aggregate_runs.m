@@ -3,8 +3,9 @@
 % together to increase the number of trials in the analysis. 
 
 close all
+clear 
 loadBCI2kTools;
-Subject = 'BJH045'; % String of Subject Name
+Subject = 'SLCH020'; % String of Subject Name
 user = expanduser('~'); % Get local path for interoperability on different machines, function in my tools dir. 
 DataPath = sprintf("%s/Box/Brunner Lab/DATA/SCAN_Mayo/%s",user,Subject); % Path to data
 checkDir(DataPath); % check if data dir exists

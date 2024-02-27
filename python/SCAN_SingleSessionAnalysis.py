@@ -12,10 +12,10 @@ import pickle
 import seaborn as sns
 from sklearn import metrics
 from sklearn.cluster import KMeans
-from stat_methods import mannwhitneyU, cohendsD, calc_ROC
+from stat_methods import mannwhitneyU, cohendsD, calc_ROC, euclidean_distance
 
 class SCAN_SingleSessionAnalysis():
-    def __init__(self,path:str or Path,subject:str,session:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False) -> None:
+    def __init__(self,path:str | Path,subject:str,session:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False) -> None:
         """
         Module containing functions for single session analysis of BCI2000 SCAN task
 
@@ -56,12 +56,12 @@ class SCAN_SingleSessionAnalysis():
             HDF = True
         else:
             HDF = False
-        self.session_data = format_Stimulus_Presentation_Session(dataLoc,subject,plot_stimuli=plot_stimuli,HDF=HDF)
-        self.signalTypes = set(self.session_data.channels.values())
+        self.session_info = format_Stimulus_Presentation_Session(dataLoc,subject,plot_stimuli=plot_stimuli,HDF=HDF)
+        self.signalTypes = set(self.session_info.channels.values())
         self.colorPalletBest = [(62/255,108/255,179/255), (27/255,196/255,225/255), (129/255,199/255,238/255),(44/255,184/255,149/255),(0,129/255,145/255), (193/255,189/255,47/255),(200/255,200/255,200/255)]
-
-        self.session_data.data = self._processSignals(load)
-        self.sessionEMG = self.session_data.data['EMG']
+        self.session_info.data = self._processSignals(True)
+        self.session_info.gamma_data = self.getBroadBandGamma(gammaType='wide')
+        self.sessionEMG = self.session_info.gamma_data['EMG']
         self.move_epochs = self._epochData('move')
         self.rest_epochs = self._epochData('rest')
         self.motor_onset = self._EMG_activity_epochs(testplots=False)
@@ -72,8 +72,8 @@ class SCAN_SingleSessionAnalysis():
 
 
     def _processSignals(self,load=True):
-        if 'processed.pkl' in os.listdir(self.subjectDir / 'preprocessed') and load==True:
-            signalGroups = readPickle(self.subjectDir / 'preprocessed' /'processed.pkl')
+        if 'timeseries_processed.pkl' in os.listdir(self.subjectDir / 'preprocessed') and load==True:
+            signalGroups = readPickle(self.subjectDir / 'preprocessed' /'timeseries_processed.pkl')
             print('loaded prepocessed data')
         else:
             signalGroups = {}
@@ -89,9 +89,53 @@ class SCAN_SingleSessionAnalysis():
                 if sigType == 'EEG':
                     data = self.processEEG(data)
                 signalGroups[sigType] = data
-            writePickle(signalGroups,self.subjectDir / 'preprocessed')
+            writePickle(signalGroups,self.subjectDir / 'preprocessed',fname='timeseries_processed')
             print('preprocessed the data')
         return signalGroups
+    
+
+    def getBroadBandGamma(self,gammaType:str=''):
+        data = self.session_info.data.copy()
+        if gammaType.lower() =='wide':
+            bandSplit = ([70,80],[80,90],[90,100],[100,110],[110,120],[120,130],[130,140],[140,150],[150,160],[160,170])
+        else:
+            bandSplit = ([65,75],[75,85],[85,95],[95,105],[105,115])
+        
+        output = {}
+        for traj,chans in data['sEEG'].items():
+            traj_data = {}
+            for channel,stream in chans.items():
+                bands = np.empty([len(bandSplit),len(stream)])
+                for i,band in enumerate(bandSplit):
+                    p = bandpass(stream,self.fs,Wn=band,order=3)
+                    pxx = hilbert_env(p) **2
+                    bands[i] = pxx
+                
+                stream = sum(bands)
+                # ax = plt.subplot(6,1,1)
+                # ax.plot(temp)
+                stream = np.log10(stream)
+                # ax = plt.subplot(6,1,2)
+                # ax.plot(temp)
+                stream = zscore_normalize(stream)
+                # ax = plt.subplot(6,1,3)
+                # ax.plot(temp)
+                stream = moving_average_np(stream,1000)
+                # temp = savitzky_golay(temp,window_size=999,order=0)
+                
+                # ax = plt.subplot(6,1,4)
+                # ax.plot(temp)
+                stream = math.e**stream
+                # ax = plt.subplot(6,1,5)
+                # ax.plot(temp)
+                stream = stream - 1
+                # ax = plt.subplot(6,1,6)
+                # ax.plot(temp)
+                traj_data[channel] = stream 
+            output[traj] = traj_data
+        output = alphaSortDict(output)
+        data['sEEG'] = output
+        return data
     def processECG(self,ECG:dict):
         output ={}
         output['ECG'] = ECG
@@ -137,12 +181,11 @@ class SCAN_SingleSessionAnalysis():
         output = {}
         output['EEG'] = EEG
         return output
-    def process_sEEG(self,sEEG:dict,gamma_power:bool=False):
+    def process_sEEG(self,sEEG:dict):
         trajectories = [key[0:2] for key in sEEG.keys()]
         trajectories = set(trajectories)
         trajectories.remove('RE')
         trajectories.add('REF')
-        bandSplit = ([65,75],[75,85],[85,95],[95,105],[105,115])
         output = {}
         for traj in trajectories:
             data = [v for k,v in sEEG.items() if k.find(traj)>-1]
@@ -151,34 +194,6 @@ class SCAN_SingleSessionAnalysis():
                 label = f'{traj}_{idx+1}_{idx+2}'
                 temp = self._bipolarReference(data[idx+1],vals)
                 # temp = notch(temp,self.fs,60,30,1)
-                if gamma_power:
-                    gamma = getGammaBand_sEEG(temp,self.fs,order=3)
-                    bands = np.empty([len(bandSplit),len(gamma)])
-                    for i,band in enumerate(bandSplit):
-                        p = bandpass(gamma,self.fs,Wn=band,order=3)
-                        pxx = hilbert_env(p) **2
-                        bands[i] = pxx
-                    
-                    temp = sum(bands)
-                    # ax = plt.subplot(6,1,1)
-                    # ax.plot(temp)
-                    temp = np.log10(temp)
-                    # ax = plt.subplot(6,1,2)
-                    # ax.plot(temp)
-                    temp = zscore_normalize(temp)
-                    # ax = plt.subplot(6,1,3)
-                    # ax.plot(temp)
-                    temp = moving_average_np(temp,1000)
-                    # temp = savitzky_golay(temp,window_size=999,order=0)
-                    
-                    # ax = plt.subplot(6,1,4)
-                    # ax.plot(temp)
-                    temp = math.e**temp
-                    # ax = plt.subplot(6,1,5)
-                    # ax.plot(temp)
-                    temp = temp - 1
-                    # ax = plt.subplot(6,1,6)
-                    # ax.plot(temp)
                 traj_data[label] = temp 
             output[traj] = traj_data
         output = alphaSortDict(output)
@@ -186,9 +201,9 @@ class SCAN_SingleSessionAnalysis():
     
     def _segmentSignals(self,sigType:dict):
         out = {}
-        for k,i in self.session_data.channels.items():
+        for k,i in self.session_info.channels.items():
             if i == sigType:
-                out[k] = self.session_data.data[k]
+                out[k] = self.session_info.gamma_data[k]
         return out
     def _bipolarReference(self,a,b):
         return b-a  
@@ -251,9 +266,9 @@ class SCAN_SingleSessionAnalysis():
         if cond == 'rest':
             idx = 1
         epochs = {}
-        for muscle, intervals in self.session_data.epoch_info[idx].items(): # epoch information (muscle, list of intervals)
+        for muscle, intervals in self.session_info.epoch_info[idx].items(): # epoch information (muscle, list of intervals)
             signals = {}
-            for sigType, values in self.session_data.data.items(): # (type of signal, dictionary of all data)
+            for sigType, values in self.session_info.gamma_data.items(): # (type of signal, dictionary of all data)
                 trajectories = {}
                 for traj, chan in values.items(): # (name of specific trajectory, recording sites on the trajectory)
                     channel = {loc: [data[on:end+1] for (on, end) in intervals] for loc, data in chan.items()} # dict comprehension to build epochs from intervals on each channel on a trajectory
@@ -331,7 +346,7 @@ class SCAN_SingleSessionAnalysis():
                 output[m_type] = epochOnsets
                 
         return output
-    def _validateSaveDir(self,subDir=''):
+    def _validateDir(self,subDir=''):
         if subDir != '':
             saveDir = self.saveRoot/subDir
         else:
@@ -407,7 +422,7 @@ class SCAN_SingleSessionAnalysis():
         # out = np.mean([av1,av2],axis=0)
         # # aggregate[new_numCols] = sub_df2[numCols]
         data = {}
-        for i in self.session_data.data['sEEG'].values():
+        for i in self.session_info.gamma_data['sEEG'].values():
             data.update(i)
         
         window = window = sig.get_window('hann',Nx=self.fs)
@@ -463,7 +478,7 @@ class SCAN_SingleSessionAnalysis():
         r_sq = self.compute_cross_correlations(motor_gamma,rest_gamma,stdev_gamma)
         p, U_res, d_res,roc_res = self.compute_power_distribution_significance(fullMotor,fullRest,gamma_slice)
         if saveMAT:
-            saveDir = self._validateSaveDir()
+            saveDir = self._validateDir()
             for entry,values in r_sq.items():
                 scio.savemat(saveDir/f'{entry}_rsq.mat',values)
         return r_sq, p, U_res, d_res,roc_res
@@ -534,7 +549,7 @@ class SCAN_SingleSessionAnalysis():
             res[cond] = temp
         targetTrajs = 'IJKLM'
         if saveTXT:
-            saveDir = self._validateSaveDir(subDir='metrics')
+            saveDir = self._validateDir(subDir='metrics')
             with open(saveDir/'sig_chans.txt', 'w') as fp:
                 for cond in res:
                     count = 0
@@ -617,11 +632,12 @@ class SCAN_SingleSessionAnalysis():
 
 
     def dict2mat(self,dic,name='', saveFolder='significance'):
-        saveDir = self._validateSaveDir(saveFolder)
+        saveDir = self._validateDir(saveFolder)
         for entry,values in dic.items():
             scio.savemat(saveDir/f'{name}_{entry}.mat',values)
 
-    def visualizeEffectCluster(self, effectDict, thresh, dataSubset:list=[],title='',for_subplot:bool=False, ax: bool or plt.axes=False, cluster:bool= False, num_clusters=5):
+    def runEffectClusters(self, effectDict, thresh, dataSubset:list=[],title='',for_subplot:bool=False, ax: bool or plt.axes=False, 
+                          clusterFlag:bool= False, num_clusters=5,exportFlag:bool=False,effectType:str=''):
         """plot effect sizes for the 3 movements as 3D scatter plot. 
             x-axis is hand
             y-axis is foot
@@ -660,16 +676,24 @@ class SCAN_SingleSessionAnalysis():
         cflag = False
         legend = []
         threshLabs = [] 
-        if cluster:
+        if clusterFlag:
             cluster_res = self.kmeans_cluster(data,num_clusters)
-            cmap = [self.colorPalletBest[i] for i in range(len(np.unique(cluster_res)))]
+            cluster_labs = cluster_res.labels_
+            cluster_dist = np.zeros(cluster_res.n_clusters)
+            for i,dist in enumerate(cluster_res.cluster_centers_):
+                cluster_dist[i] = euclidean_distance(dist)
+            max_res = [euclidean_distance(i) for i in cluster_res.cluster_centers_ if min(i) > thresh] # need this step to remove clusters which center about a decrease in power 
+            SCAN_cluster = np.where(cluster_dist==max(max_res))
+            SCAN_euclid = cluster_dist[SCAN_cluster]
+            print(f'\n\nSCAN Cluster is {SCAN_cluster},\ncoordinates: {cluster_res.cluster_centers_[SCAN_cluster]}\n distance: {SCAN_euclid}')
+            cmap = [self.colorPalletBest[i] for i in range(len(np.unique(cluster_labs)))]
         for i,(k,v) in enumerate(data.items()):
             # locs = v.keys()
             h = v['Hand'] # x -> hand   
             f = v['Foot'] # y -> foot
             t = v['Tongue'] # z -> tongue
             xyz[i] = np.array([h,f,t])
-            euclid = np.sqrt(h**2 + f**2 + t**2)
+            euclid = euclidean_distance(xyz[i])
             if chan != k[0:2]:
                 chan = k[0:2]
                 if cflag:
@@ -683,46 +707,51 @@ class SCAN_SingleSessionAnalysis():
                 lab = chan
             else:
                 lab = '_'
-            if(h > thresh and f > thresh and t > thresh):
+            if clusterFlag:
+                c_lab = cluster_labs[i]
+                c = cmap[c_lab]
+                if cluster_labs[i] == SCAN_cluster:
+                    print(f'{k}: {euclid} dist\nhand {round(h,2)} foot {round(f,2)} tongue {round(t,2)}')
+                    threshLabs.append([k,i])
+                    print(f'cluster {cluster_labs[i]}')
+                    size = 50
+                else:
+                    size = 10
+            elif(clusterFlag == False and h > thresh and f > thresh and t > thresh):
                 
                 print(f'{k}: {euclid} dist\nhand {round(h,2)} foot {round(f,2)} tongue {round(t,2)}')
-                if cluster:
-                    threshLabs.append([k,cluster_res[i]])
-                    print(f'cluster {cluster_res[i]}: {cmap[cluster_res[i]]}')
-                else:
-                    threshLabs.append(k)
-
+                threshLabs.append([k,i])
                 size = 50
             else: 
                 size = 10
-            if cluster:
-                c_lab = cluster_res[i]
-                c = cmap[c_lab]
-            ax.scatter(xs=h,ys=f,zs=t,s = size,c=c,label=lab)
-        if cluster:   
-            threshDict = {k[0]:[v,k[1]] for k,v in zip(threshLabs,xyz)}
-        else:
-            threshDict = {k:v for k,v in zip(threshLabs,xyz)}
+            
+            ax.scatter(xs=h,ys=f,zs=t,s = size,color=c,label=lab)
+        threshDict = {f'{k[0].split("_")[0]}{k[0].split("_")[1]}_{k[0].split("_")[2]}':xyz[k[1]] for k in threshLabs}
+        if clusterFlag and exportFlag:
+            filename = f'{self.subject}_{self.session}_{title}_{effectType}_cluster_result.mat'
+            self._validateDir(self.saveRoot)
+            output = {'clusterRes':threshDict}
+            scio.savemat(self.saveRoot/filename,mdict=output,format='5')
         # ax.scatter(xs=xyz[:,0],ys=xyz[:,1],zs=xyz[:,2])
         axLine = np.linspace(-thresh*10,thresh*10,10)
         offAx = np.linspace(0,0,10)
         ax.plot(xs=axLine,ys=offAx, zs=offAx, c=(0,0,0))
         ax.plot(xs=offAx, ys=axLine,zs=offAx, c=(0,0,0))
         ax.plot(xs=offAx, ys=offAx, zs=axLine, c=(0,0,0))
-        ax.set_xlabel('hand')
-        ax.set_ylabel('foot')
-        ax.set_zlabel('tongue')
-        ax.set_title(f'{title} data cluster')
+        ax.set_xlabel(f'hand {effectType}')
+        ax.set_ylabel(f'foot {effectType}')
+        ax.set_zlabel(f'tongue {effectType}')
+        ax.set_title(f'{self.subject}\n{title} data cluster')
         # ax.set_xlim(0,1)
         # ax.set_ylim(0,1)
         # ax.set_zlim(0,1)
-        ax.legend()
+        # ax.legend()
         ax.grid(False)
         # plt.grid(visible=False)
         # sns.despine()
         return ax,threshDict
     
-    def kmeans_cluster(self,data:dict,num_clusters:int):
+    def kmeans_cluster(self,data:dict,num_clusters:int)->KMeans:
         channels = data.keys()
         n_samp = len(data)
         xyz = np.empty([n_samp,3])
@@ -738,7 +767,7 @@ class SCAN_SingleSessionAnalysis():
         cluster.fit(xyz)
         labels = cluster.labels_
         cluters_accessed = len(np.unique(labels))        
-        return labels
+        return cluster
 
 
     def plotAllEffects(self,threshholds:list,):
@@ -782,7 +811,7 @@ def epoch_powerAverage(a,f_slice = [0]):
 def parseDictViaKeys(data,keys):
     res = {k:data[k] for k in keys}
     return res
-def signed_cross_correlation(m:float or np.ndarray,r:float or np.ndarray,stdev:float or np.ndarray,num_r=10,num_m=10):
+def signed_cross_correlation(m:float | np.ndarray,r:float | np.ndarray,stdev:float | np.ndarray,num_r=10,num_m=10):
     """
     
     """
@@ -855,12 +884,12 @@ class format_Stimulus_Presentation_Session():
                     keys = list(temp.keys())
                     for k in keys:
                         data[k] = temp[k][0]
-                    self.data = data
+                    self.gamma_data = data
                     print(0)
 
                 else:    
                     data = scio.loadmat(loc/file,mat_dtype=True,simplify_cells=True)
-                    self.data = data['signals']
+                    self.gamma_data = data['signals']
             elif file.find('channeltypes')>-1:
                 channels = scio.loadmat(loc/file,mat_dtype=True,simplify_cells=True)
                 self.channels = channels['chan_types']
@@ -966,8 +995,8 @@ def find_intervals(array):
 
     return intervals
 
-def writePickle(struct,fpath:Path):
-    fname = fpath / 'processed.pkl'
+def writePickle(struct,fpath:Path,fname):
+    fname = fpath / f'{fname}.pkl'
     with open(fname,'wb') as handle:
         pickle.dump(struct,handle)
 def readPickle(fpath):
@@ -991,18 +1020,25 @@ def sliceArray(array, interval):
 if __name__ == '__main__':
     userPath = Path(os.path.expanduser('~'))
     dataPath = userPath / "Box\Brunner Lab\DATA\SCAN_Mayo"
-    subject = 'BJH046'
-    # session = 'pre_ablation'
+    subject = 'BJH041'
+    session = 'pre_ablation'
     # session = 'post_ablation'
-    session = 'aggregate'
+    # session = 'aggregate'
 
     a = SCAN_SingleSessionAnalysis(dataPath,subject,session,load=True,plot_stimuli=False)
     # a.export_session_EMG()
     # a.export_epochs(signalType='EMG',fname='emg')
     r_sq, p_vals, U_res, d_res,roc_res = a.taskPowerCorrelation_analysis(saveMAT=False)
-    a.visualizeEffectCluster(d_res,1,title='all channels',cluster=True)
+    fig = plt.figure()
+    row = 2; col =1
+    ax = fig.add_subplot(row, col, 1, projection='3d')
+    ax.view_init(elev=30, azim=105, roll=0)
+    a.runEffectClusters(d_res,0.5,title='all channels',clusterFlag=True,ax=ax,for_subplot=True, effectType='(d)')
     sig_chans, nonsig_chans = a.returnSignificantLocations(p_vals,alpha=0.05)
-    a.visualizeEffectCluster(d_res,1,dataSubset=sig_chans,title='significant channels',cluster=True, num_clusters=5)
+    ax2 = fig.add_subplot(row, col, 2, projection='3d')
+    ax2.view_init(elev=30, azim=105, roll=0)
+
+    a.runEffectClusters(d_res,0.5,dataSubset=sig_chans,title='significant channels',clusterFlag=True, num_clusters=5,ax=ax2,for_subplot=True,effectType='(d)',exportFlag=True)
     plt.show()
     sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
     # a.scatterMetrics(sig_r,sig_d,sig_roc,sig_U) # significant Channels

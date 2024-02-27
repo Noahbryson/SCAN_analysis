@@ -1,7 +1,7 @@
 %% Setup
 close all
 loadBCI2kTools;
-Subject = 'BJH046'; % String of Subject Name
+Subject = 'SLCH020'; % String of Subject Name
 user = expanduser('~'); % Get local path for interoperability on different machines, function in my tools dir. 
 DataPath = sprintf("%s/Box/Brunner Lab/DATA/SCAN_Mayo/%s",user,Subject); % Path to data
 checkDir(DataPath); % check if data dir exists
@@ -14,7 +14,7 @@ dataLocs = parseDir(dirContents,tgtFile,'beans');
 
 
 % adjust this index for run number
-pathName = dataLocs{3}; % select file wanted if multiple runs of this experiment (ie pre and post ablation), alphabetical order
+pathName = dataLocs{2}; % select file wanted if multiple runs of this experiment (ie pre and post ablation), alphabetical order
 
 
 tDir = sprintf('%s/%s',DataPath,pathName); % path to specific session
@@ -24,7 +24,7 @@ fname = fname{end}; % extract fname from cell array
 [data,states,parms]=load_bcidat(strcat(tDir,'/',fname),1); % load BCI2000 dat file
 secondaryBCIflag = ismember('gUSB',channels.Var6);
 
-if secondaryBCIflag
+if secondaryBCIflag % if there are secondary EMG recordings!!!!!
 fname_sub = strsplit(fname,'.');
 tgt = fname_sub(1);
 tgt = strcat(tgt,'_1.dat');
@@ -107,7 +107,7 @@ if stream_diff > 0 && avg_offset > 0
 data1 = data1(stream_diff+1:end,:);
 elseif stream_diff < 0 && avg_offset > 0
 % prim smaller and lagging
-data2 = data2(1:end-(stream_diff-1),:);
+data2 = data2(1:end-(abs(stream_diff)),:);
 elseif stream_diff > 0 && avg_offset < 0
 % prim bigger and leading
 data1 = data1(1:end-(stream_diff-1),:);
