@@ -13,9 +13,10 @@ import seaborn as sns
 from sklearn import metrics
 from sklearn.cluster import KMeans
 from stat_methods import mannwhitneyU, cohendsD, calc_ROC, euclidean_distance
+from stimulusPresentation import format_Stimulus_Presentation_Session
 
 class SCAN_SingleSessionAnalysis():
-    def __init__(self,path:str | Path,subject:str,session:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False) -> None:
+    def __init__(self,path:str or Path,subject:str,session:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False,gammaRange=[65,115]) -> None: # type: ignore
         """
         Module containing functions for single session analysis of BCI2000 SCAN task
 
@@ -56,12 +57,13 @@ class SCAN_SingleSessionAnalysis():
             HDF = True
         else:
             HDF = False
+        self.gammaRange = gammaRange
         self.session_info = format_Stimulus_Presentation_Session(dataLoc,subject,plot_stimuli=plot_stimuli,HDF=HDF)
         self.signalTypes = set(self.session_info.channels.values())
         self.colorPalletBest = [(62/255,108/255,179/255), (27/255,196/255,225/255), (129/255,199/255,238/255),(44/255,184/255,149/255),(0,129/255,145/255), (193/255,189/255,47/255),(200/255,200/255,200/255)]
-        self.session_info.data = self._processSignals(True)
-        self.session_info.gamma_data = self.getBroadBandGamma(gammaType='wide')
-        self.sessionEMG = self.session_info.gamma_data['EMG']
+        self.session_info.data = self._processSignals(load)
+        # self.session_info.data = self.getBroadBandGamma(gammaType='wide')
+        self.sessionEMG = self.session_info.data['EMG']
         self.move_epochs = self._epochData('move')
         self.rest_epochs = self._epochData('rest')
         self.motor_onset = self._EMG_activity_epochs(testplots=False)
@@ -93,6 +95,38 @@ class SCAN_SingleSessionAnalysis():
             print('preprocessed the data')
         return signalGroups
     
+
+    def probeSignalQuality(self,channel:str=''):
+        allChans = list(self.session_info.data['sEEG'].keys())
+        if channel == '':
+            shank = allChans[0]
+            data = list(self.session_info.data['sEEG'][shank].keys())
+            channel = data[0]
+        else:
+            shank = channel.split('_')[0]
+        data = self.session_info.data['sEEG'][shank][channel]
+        f,pxx = sig.welch(x=data,fs=self.fs,window=sig.get_window('hann',Nx=self.fs),scaling='density')
+        t = np.linspace(0,len(data)/self.fs,len(data))
+        alpha = bandpass(data,self.fs,[8,13],4)
+        beta = bandpass(data,self.fs,[14,28],4)
+        high_gamma = bandpass(data,self.fs,self.gammaRange,4)
+        fig, (ax1,ax3,ax4,ax5) = plt.subplots(4,1,sharex=True)
+        ax1.plot(t,data)
+        ax1.set_title(channel)
+        # ax2.semilogy(f,pxx)
+        # ax2.set_ylabel('(V**2/Hz)')
+        # ax2.set_xlabel('Hz')
+        # ax2.set_title(f'{channel} PSD')
+        # ax2.set_xlim([1,300])
+        ax3.plot(t,alpha)
+        ax3.set_title('alpha')
+        ax4.plot(t,beta)
+        ax4.set_title('beta')
+        ax5.plot(t,high_gamma)
+        ax5.set_title('broadband gamma')
+        plt.show()
+
+
 
     def getBroadBandGamma(self,gammaType:str=''):
         data = self.session_info.data.copy()
@@ -203,7 +237,7 @@ class SCAN_SingleSessionAnalysis():
         out = {}
         for k,i in self.session_info.channels.items():
             if i == sigType:
-                out[k] = self.session_info.gamma_data[k]
+                out[k] = self.session_info.data[k]
         return out
     def _bipolarReference(self,a,b):
         return b-a  
@@ -268,7 +302,7 @@ class SCAN_SingleSessionAnalysis():
         epochs = {}
         for muscle, intervals in self.session_info.epoch_info[idx].items(): # epoch information (muscle, list of intervals)
             signals = {}
-            for sigType, values in self.session_info.gamma_data.items(): # (type of signal, dictionary of all data)
+            for sigType, values in self.session_info.data.items(): # (type of signal, dictionary of all data)
                 trajectories = {}
                 for traj, chan in values.items(): # (name of specific trajectory, recording sites on the trajectory)
                     channel = {loc: [data[on:end+1] for (on, end) in intervals] for loc, data in chan.items()} # dict comprehension to build epochs from intervals on each channel on a trajectory
@@ -422,7 +456,7 @@ class SCAN_SingleSessionAnalysis():
         # out = np.mean([av1,av2],axis=0)
         # # aggregate[new_numCols] = sub_df2[numCols]
         data = {}
-        for i in self.session_info.gamma_data['sEEG'].values():
+        for i in self.session_info.data['sEEG'].values():
             data.update(i)
         
         window = window = sig.get_window('hann',Nx=self.fs)
@@ -449,7 +483,7 @@ class SCAN_SingleSessionAnalysis():
         return df
     def taskPowerCorrelation_analysis(self, saveMAT:bool=False,freqRange:list = [1,300],plotSection:bool=False):
         motor, rest, f = self._sEEG_epochPSDs([freqRange[0],freqRange[1]+1])
-        gamma_slice = [np.where(f==65)[0][0],np.where(f==115)[0][0]+1]
+        gamma_slice = [np.where(f==self.gammaRange[0])[0][0],np.where(f==self.gammaRange[-1])[0][0]+1]
         motor, fullMotor = self._epoch_PSD_average(motor)
         rest, fullRest = self._epoch_PSD_average(rest)
         g_av = self._globalPSD_normalize()
@@ -622,7 +656,7 @@ class SCAN_SingleSessionAnalysis():
             lab = task.split('_')
             lab2 = self.session.split('_')
             sns.histplot(df,x='value',hue='metric',ax=ax,stat='percent',kde=True,bins=numBins)
-            ax.set_title(f'{lab[-1]}, {lab2[0]}-{lab2[1]} ')
+            ax.set_title(f'{lab[-1]}, {lab2} ')
             ax.axvline(0.5,label='Increase Boundary',c=(0,0,0),linestyle='--')
             out = pd.concat([out,df],ignore_index=True)
         # for a in ax.flat:
@@ -636,8 +670,8 @@ class SCAN_SingleSessionAnalysis():
         for entry,values in dic.items():
             scio.savemat(saveDir/f'{name}_{entry}.mat',values)
 
-    def runEffectClusters(self, effectDict, thresh, dataSubset:list=[],title='',for_subplot:bool=False, ax: bool or plt.axes=False, 
-                          clusterFlag:bool= False, num_clusters=5,exportFlag:bool=False,effectType:str=''):
+    def runEffectClusters(self, effectDict, thresh, dataSubset:list=[],title='',for_subplot:bool=False, ax: bool or plt.axes=False,  # type: ignore
+                          clusterFlag:bool= False, num_clusters=5,exportFlag:bool=False,effectLabel:str=''):
         """plot effect sizes for the 3 movements as 3D scatter plot. 
             x-axis is hand
             y-axis is foot
@@ -728,7 +762,7 @@ class SCAN_SingleSessionAnalysis():
             ax.scatter(xs=h,ys=f,zs=t,s = size,color=c,label=lab)
         threshDict = {f'{k[0].split("_")[0]}{k[0].split("_")[1]}_{k[0].split("_")[2]}':xyz[k[1]] for k in threshLabs}
         if clusterFlag and exportFlag:
-            filename = f'{self.subject}_{self.session}_{title}_{effectType}_cluster_result.mat'
+            filename = f'{self.subject}_{self.session}_{title}_{effectLabel}_cluster_result.mat'
             self._validateDir(self.saveRoot)
             output = {'clusterRes':threshDict}
             scio.savemat(self.saveRoot/filename,mdict=output,format='5')
@@ -738,9 +772,9 @@ class SCAN_SingleSessionAnalysis():
         ax.plot(xs=axLine,ys=offAx, zs=offAx, c=(0,0,0))
         ax.plot(xs=offAx, ys=axLine,zs=offAx, c=(0,0,0))
         ax.plot(xs=offAx, ys=offAx, zs=axLine, c=(0,0,0))
-        ax.set_xlabel(f'hand {effectType}')
-        ax.set_ylabel(f'foot {effectType}')
-        ax.set_zlabel(f'tongue {effectType}')
+        ax.set_xlabel(f'hand {effectLabel}')
+        ax.set_ylabel(f'foot {effectLabel}')
+        ax.set_zlabel(f'tongue {effectLabel}')
         ax.set_title(f'{self.subject}\n{title} data cluster')
         # ax.set_xlim(0,1)
         # ax.set_ylim(0,1)
@@ -811,7 +845,7 @@ def epoch_powerAverage(a,f_slice = [0]):
 def parseDictViaKeys(data,keys):
     res = {k:data[k] for k in keys}
     return res
-def signed_cross_correlation(m:float | np.ndarray,r:float | np.ndarray,stdev:float | np.ndarray,num_r=10,num_m=10):
+def signed_cross_correlation(m:float or np.ndarray,r:float or np.ndarray,stdev:float or np.ndarray,num_r=10,num_m=10): # type: ignore
     """
     
     """
@@ -857,7 +891,7 @@ def method_plot(y,x = False, log = False, logx = False,logy=False):
     return fig, ax
 
 
-class format_Stimulus_Presentation_Session():
+# class format_Stimulus_Presentation_Session():
     def __init__(self,loc:Path,subject,plot_stimuli=False,HDF:bool=False):
         """
         Formats the 4 preprocessed filed from MATLAB into a data object
@@ -884,12 +918,12 @@ class format_Stimulus_Presentation_Session():
                     keys = list(temp.keys())
                     for k in keys:
                         data[k] = temp[k][0]
-                    self.gamma_data = data
+                    self.data = data
                     print(0)
 
                 else:    
                     data = scio.loadmat(loc/file,mat_dtype=True,simplify_cells=True)
-                    self.gamma_data = data['signals']
+                    self.data = data['signals']
             elif file.find('channeltypes')>-1:
                 channels = scio.loadmat(loc/file,mat_dtype=True,simplify_cells=True)
                 self.channels = channels['chan_types']
@@ -1016,16 +1050,16 @@ def sliceArray(array, interval):
 
 """Script for debugging"""
 
-
 if __name__ == '__main__':
     userPath = Path(os.path.expanduser('~'))
     dataPath = userPath / "Box\Brunner Lab\DATA\SCAN_Mayo"
-    subject = 'BJH041'
+    subject = 'BJH045'
     session = 'pre_ablation'
     # session = 'post_ablation'
-    # session = 'aggregate'
-
-    a = SCAN_SingleSessionAnalysis(dataPath,subject,session,load=True,plot_stimuli=False)
+    session = 'day3_run1'
+    gammaRange = [70,170]
+    a = SCAN_SingleSessionAnalysis(dataPath,subject,session,load=True,plot_stimuli=False,gammaRange=gammaRange)
+    a.probeSignalQuality('OR_7_8')
     # a.export_session_EMG()
     # a.export_epochs(signalType='EMG',fname='emg')
     r_sq, p_vals, U_res, d_res,roc_res = a.taskPowerCorrelation_analysis(saveMAT=False)
@@ -1033,13 +1067,13 @@ if __name__ == '__main__':
     row = 2; col =1
     ax = fig.add_subplot(row, col, 1, projection='3d')
     ax.view_init(elev=30, azim=105, roll=0)
-    a.runEffectClusters(d_res,0.5,title='all channels',clusterFlag=True,ax=ax,for_subplot=True, effectType='(d)')
+    a.runEffectClusters(d_res,0.5,title='all channels',clusterFlag=True,ax=ax,for_subplot=True, effectLabel='(d)')
     sig_chans, nonsig_chans = a.returnSignificantLocations(p_vals,alpha=0.05)
     ax2 = fig.add_subplot(row, col, 2, projection='3d')
     ax2.view_init(elev=30, azim=105, roll=0)
 
-    a.runEffectClusters(d_res,0.5,dataSubset=sig_chans,title='significant channels',clusterFlag=True, num_clusters=5,ax=ax2,for_subplot=True,effectType='(d)',exportFlag=True)
-    plt.show()
+    a.runEffectClusters(d_res,0.5,dataSubset=sig_chans,title='significant channels',clusterFlag=True, num_clusters=5,ax=ax2,for_subplot=True,effectLabel='(d)',exportFlag=True)
+    # plt.show()
     sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
     # a.scatterMetrics(sig_r,sig_d,sig_roc,sig_U) # significant Channels
     a.visualizeMetrics(r_sq, d_res,roc_res,U_res,numBins=40) # all channels
