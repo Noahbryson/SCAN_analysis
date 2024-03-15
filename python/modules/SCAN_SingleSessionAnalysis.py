@@ -5,15 +5,14 @@ from pathlib import Path
 import scipy.io as scio
 import scipy.stats as stats
 import pandas as pd
-from filters import *
+from functions.filters import *
 import math
-import time
 import pickle
 import seaborn as sns
 from sklearn import metrics
 from sklearn.cluster import KMeans
-from stat_methods import mannwhitneyU, cohendsD, calc_ROC, euclidean_distance
-from stimulusPresentation import format_Stimulus_Presentation_Session
+from functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, euclidean_distance
+from modules.stimulusPresentation import format_Stimulus_Presentation_Session
 
 class SCAN_SingleSessionAnalysis():
     def __init__(self,path:str or Path,subject:str,session:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False,gammaRange=[65,115]) -> None: # type: ignore

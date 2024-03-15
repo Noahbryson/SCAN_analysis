@@ -1,20 +1,20 @@
 import os
 from pathlib import Path
-from filters import *
-from stat_methods import *
+from functions.filters import *
+from functions.stat_methods import *
 import scipy.io as scio
 import scipy.signal as sig
 import scipy.stats as stat
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from colorOps import colorOps
+from modules.colorOps import colorOps
 # from SCAN_SingleSessionAnalysis import SCAN_SingleSessionAnalysis
 class compare_sessions():
     def __init__(self,
-                 parentDir:Path or str,
+                 parentDir:Path or str, # type: ignore
                  subject:str,
-                 analysis_types:str or list = ['rsq','emg','seshEMG'],
+                 analysis_types:str or list = ['rsq','emg','seshEMG'], # type: ignore
                  session_labels: list = ['pre_ablation','post_ablation']
     ):
         

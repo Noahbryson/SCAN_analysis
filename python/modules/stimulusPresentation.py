@@ -3,7 +3,7 @@ import h5py
 from pathlib import Path
 import scipy.io as scio
 import scipy.stats as stats
-from filters import *
+from functions.filters import *
 
 
 class format_Stimulus_Presentation_Session():

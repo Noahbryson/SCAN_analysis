@@ -7,7 +7,7 @@ class colorOps():
         self.rgb_s = 1.0
         self.cmyk_s = 100.0
 
-    def rgb2cmyk(self,rgb:tuple or list):
+    def rgb2cmyk(self,rgb:tuple or list): # type: ignore
         r = rgb[0]
         g = rgb[1]
         b = rgb[2]
@@ -24,7 +24,7 @@ class colorOps():
         out = [self.cmyk_s* i for i in [c,m,y,k]]
         return tuple(out)
 
-    def cmyk2rgb(self,cmyk: tuple or list):
+    def cmyk2rgb(self,cmyk: tuple or list): # type: ignore
         c = cmyk[0]
         m = cmyk[1]
         y = cmyk[2]
