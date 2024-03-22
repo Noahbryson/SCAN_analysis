@@ -1,4 +1,8 @@
 import os
+cwd = os.getcwd()
+print(os.getcwd())
+# os.chdir(f'{cwd}\python')
+# print(os.getcwd())
 import csv
 import h5py
 from pathlib import Path
