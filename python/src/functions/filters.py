@@ -2,14 +2,14 @@ import scipy.signal as sig
 import numpy as np
 import matplotlib.pyplot as plt
 
-def highpass(data:np.ndarray or list, fs:int, Wn:float, order:int = 4):
+def highpass(data:np.ndarray | list, fs:int, Wn:float, order:int = 4):
     data = data - data[0]
     sos = sig.butter(N=order, Wn=Wn, btype='highpass', output='sos', fs=fs)
     return sig.sosfiltfilt(sos, data)
-def lowpass(data:np.ndarray or list, fs:int, Wn:float, order:int = 4):
+def lowpass(data:np.ndarray | list, fs:int, Wn:float, order:int = 4):
     sos = sig.butter(N=order, Wn=Wn, btype='lowpass', output='sos', fs=fs)
     return sig.sosfiltfilt(sos, data)
-def bandpass(data:np.ndarray or list, fs:int, Wn:list[float,float], order:int = 2, freqResponse:bool=False):
+def bandpass(data:np.ndarray | list, fs:int, Wn:list[float,float], order:int = 2, freqResponse:bool=False):
     data = data - data[0]
     sos = sig.butter(N=order, Wn=Wn, btype='bandpass', output='sos', fs=fs)
     if freqResponse:
@@ -20,7 +20,7 @@ def bandpass(data:np.ndarray or list, fs:int, Wn:list[float,float], order:int = 
         plt.semilogx(w,db)
         plt.show()
     return sig.sosfiltfilt(sos, data)
-def notch(data:np.ndarray or list, fs:int, Wn:float, Q:int, order:int = 4):
+def notch(data:np.ndarray | list, fs:int, Wn:float, Q:int, order:int = 4):
     """
     Parameters
     ----------

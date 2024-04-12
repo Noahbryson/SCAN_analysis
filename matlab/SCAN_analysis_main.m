@@ -21,3 +21,4 @@ fname = sprintf('%s_%s',session,conditions{cond})
 
 
 
+/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/BJH045/aggregate

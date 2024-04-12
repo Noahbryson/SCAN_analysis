@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from modules.SCAN_SingleSessionAnalysis import SCAN_SingleSessionAnalysis
+from src.SCAN_SingleSessionAnalysis import SCAN_SingleSessionAnalysis
 
 
 if __name__ == '__main__':

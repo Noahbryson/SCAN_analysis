@@ -8,7 +8,7 @@ import scipy.stats as stat
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from modules.colorOps import colorOps
+from src.colorOps import colorOps
 # from SCAN_SingleSessionAnalysis import SCAN_SingleSessionAnalysis
 class compare_sessions():
     def __init__(self,

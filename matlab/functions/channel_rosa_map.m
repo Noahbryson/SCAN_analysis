@@ -1,4 +1,4 @@
-function channelrosamap = channel_rosa_map(filename, dataLines)
+function output = channel_rosa_map(filename, dataLines)
 %IMPORTFILE Import data from a text file
 %  CHANNELROSAMAP = IMPORTFILE(FILENAME) reads data from text file
 %  FILENAME for the default selection.  Returns the data as a table.
@@ -31,7 +31,7 @@ opts.Delimiter = ",";
 
 % Specify column names and types
 opts.VariableNames = ["IDX", "Rosa", "LABEL"];
-opts.VariableTypes = ["double", "string", "string"];
+opts.VariableTypes = ["double", "char", "char"];
 
 % Specify file level properties
 opts.ExtraColumnsRule = "ignore";
@@ -43,5 +43,24 @@ opts = setvaropts(opts, ["Rosa", "LABEL"], "EmptyFieldRule", "auto");
 
 % Import the data
 channelrosamap = readtable(filename, opts);
-
+channelrosamap = table2struct(channelrosamap);
+rosa = cell(length(channelrosamap),1);
+idx = zeros(length(channelrosamap),1);
+lab = cell(length(channelrosamap),1);
+for i=1:length(channelrosamap)
+    t = channelrosamap(i).Rosa;
+    comps = strsplit(t(2:end-1),"'");
+    if length(comps) > 1
+        rosa{i} = strcat(comps{1},"'",comps{2});
+    else
+        rosa{i} = strcat(comps{1});
+        % rosa{i} = channelrosamap(i).Rosa;
+    end
+    lab{i} = channelrosamap(i).LABEL;
+    idx(i) = channelrosamap(i).IDX;
+end
+output = struct;
+output.idx = idx;
+output.rosa = rosa;
+output.label = lab;
 end

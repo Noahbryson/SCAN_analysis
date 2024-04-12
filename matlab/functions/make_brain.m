@@ -1,4 +1,4 @@
-brain = load("C:\Users\nbrys\Box\Brunner Lab\DATA\SCAN_Mayo\BJH041\brain\brain_MNI.mat");
+brain = load("/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/BJH041/brain/brain_MNI.mat");
 figure(1)
 ax = subplot(2,1,1);
 plot3DModel(gca,brain.cortex);

@@ -7,7 +7,7 @@ def calc_rmse(a,b):
     return rmse
 
 
-def euclidean_distance(data:np.array or list):
+def euclidean_distance(data:np.ndarray | list):
     return np.sqrt(np.sum(np.square(data)))
 
 

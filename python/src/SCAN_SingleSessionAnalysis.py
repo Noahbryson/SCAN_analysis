@@ -16,7 +16,7 @@ import seaborn as sns
 from sklearn import metrics
 from sklearn.cluster import KMeans
 from functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, euclidean_distance
-from modules.stimulusPresentation import format_Stimulus_Presentation_Session
+from stimulusPresentation import format_Stimulus_Presentation_Session
 
 class SCAN_SingleSessionAnalysis():
     def __init__(self,path:str or Path,subject:str,session:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False,gammaRange=[65,115]) -> None: # type: ignore
@@ -1054,8 +1054,13 @@ def sliceArray(array, interval):
 """Script for debugging"""
 
 if __name__ == '__main__':
+    import platform
+    localEnv = platform.system()
     userPath = Path(os.path.expanduser('~'))
-    dataPath = userPath / "Box\Brunner Lab\DATA\SCAN_Mayo"
+    if localEnv == 'Windows':
+        dataPath = userPath / "Box\Brunner Lab\DATA\SCAN_Mayo"
+    else:
+        dataPath = userPath/"Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo"
     subject = 'BJH045'
     session = 'pre_ablation'
     # session = 'post_ablation'
