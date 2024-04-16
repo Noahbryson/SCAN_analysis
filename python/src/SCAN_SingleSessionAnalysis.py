@@ -17,9 +17,10 @@ from sklearn import metrics
 from sklearn.cluster import KMeans
 from functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, euclidean_distance
 from stimulusPresentation import format_Stimulus_Presentation_Session
+from ERP_struct import ERP_struct
 
 class SCAN_SingleSessionAnalysis():
-    def __init__(self,path:str or Path,subject:str,session:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False,gammaRange=[65,115]) -> None: # type: ignore
+    def __init__(self,path:str or Path,subject:str,sessionID:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False,gammaRange=[65,115]) -> None: # type: ignore
         """
         Module containing functions for single session analysis of BCI2000 SCAN task
 
@@ -44,7 +45,7 @@ class SCAN_SingleSessionAnalysis():
         print(f'')
         self.main_dir = path
         self.subject = subject
-        self.session = session
+        self.sessionID = sessionID
         self.fs = fs
 
         if os.path.exists(self.main_dir/self.subject/'muscle_mapping.csv'):
@@ -53,30 +54,33 @@ class SCAN_SingleSessionAnalysis():
                 self.muscleMapping = {rows[0]:rows[1:] for rows in reader}
         else:
             self.muscleMapping = {'1_Hand':['wristExtensor', 'ulnar'], '3_Foot':['TBA'],'2_Tongue':['tongue']}
-        self.subjectDir = path / subject / session
+        self.subjectDir = path / subject / sessionID
         dataLoc = self.subjectDir / 'preprocessed'
         self.saveRoot = self.subjectDir / 'analyzed'
-        if session.find('aggregate')>-1:
+        if sessionID.find('aggregate')>-1:
             HDF = True
         else:
             HDF = False
         self.gammaRange = gammaRange
-        self.session_info = format_Stimulus_Presentation_Session(dataLoc,subject,plot_stimuli=plot_stimuli,HDF=HDF)
-        self.signalTypes = set(self.session_info.channels.values())
+        self.session = format_Stimulus_Presentation_Session(dataLoc,subject,plot_stimuli=plot_stimuli,HDF=HDF)
+        self.signalTypes = set(self.session.channels.values())
         self.colorPalletBest = [(62/255,108/255,179/255), (27/255,196/255,225/255), (129/255,199/255,238/255),(44/255,184/255,149/255),(0,129/255,145/255), (193/255,189/255,47/255),(200/255,200/255,200/255)]
-        self.session_info.data = self._processSignals(load)
+        self.session.data = self._processSignals(load)
         # self.session_info.data = self.getBroadBandGamma(gammaType='wide')
-        self.sessionEMG = self.session_info.data['EMG']
+        self.sessionEMG = self.session.data['EMG']
+        self.session.data['sEEG'], self.ref = self.remove_references()
+        self.ERP_epochs = self._epochERPs()
         self.move_epochs = self._epochData('move')
         self.rest_epochs = self._epochData('rest')
         self.motor_onset = self._EMG_activity_epochs(testplots=False)
         self.move_epochs,self.rest_epochs = self.reshape_epochs()
         if epoch_by_movement:
             self.move_epochs = self._epoch_via_EMG()
+        
         print('end init')
 
 
-    def _processSignals(self,load=True):
+    def _processSignals(self,load=True,bipolarSEEG=False):
         if 'timeseries_processed.pkl' in os.listdir(self.subjectDir / 'preprocessed') and load==True:
             signalGroups = readPickle(self.subjectDir / 'preprocessed' /'timeseries_processed.pkl')
             print('loaded prepocessed data')
@@ -88,7 +92,7 @@ class SCAN_SingleSessionAnalysis():
                 if sigType == 'EMG':
                     data = self.processEMG(data)
                 if sigType == 'sEEG':
-                    data = self.process_sEEG(data)
+                    data = self.process_sEEG(data,bipolarSEEG)
                 if sigType == 'ECG':
                     data = self.processECG(data)
                 if sigType == 'EEG':
@@ -97,17 +101,20 @@ class SCAN_SingleSessionAnalysis():
             writePickle(signalGroups,self.subjectDir / 'preprocessed',fname='timeseries_processed')
             print('preprocessed the data')
         return signalGroups
-    
+    def remove_references(self):
+        data = {k:v for k,v in self.session.data['sEEG'].items() if k.find('REF')<0}
+        ref = {k:v for k,v in self.session.data['sEEG'].items() if k.find('REF')>=0}
+        return data, ref
 
     def probeSignalQuality(self,channel:str=''):
-        allChans = list(self.session_info.data['sEEG'].keys())
+        allChans = list(self.session.data['sEEG'].keys())
         if channel == '':
             shank = allChans[0]
-            data = list(self.session_info.data['sEEG'][shank].keys())
+            data = list(self.session.data['sEEG'][shank].keys())
             channel = data[0]
         else:
             shank = channel.split('_')[0]
-        data = self.session_info.data['sEEG'][shank][channel]
+        data = self.session.data['sEEG'][shank][channel]
         f,pxx = sig.welch(x=data,fs=self.fs,window=sig.get_window('hann',Nx=self.fs),scaling='density')
         t = np.linspace(0,len(data)/self.fs,len(data))
         alpha = bandpass(data,self.fs,[8,13],4)
@@ -129,10 +136,11 @@ class SCAN_SingleSessionAnalysis():
         ax5.set_title('broadband gamma')
         plt.show()
 
+    
 
 
     def getBroadBandGamma(self,gammaType:str=''):
-        data = self.session_info.data.copy()
+        data = self.session.data.copy()
         if gammaType.lower() =='wide':
             bandSplit = ([70,80],[80,90],[90,100],[100,110],[110,120],[120,130],[130,140],[140,150],[150,160],[160,170])
         else:
@@ -218,29 +226,148 @@ class SCAN_SingleSessionAnalysis():
         output = {}
         output['EEG'] = EEG
         return output
-    def process_sEEG(self,sEEG:dict):
+    def process_sEEG(self,sEEG:dict,bipolar:bool=True):
         trajectories = [key[0:2] for key in sEEG.keys()]
         trajectories = set(trajectories)
         trajectories.remove('RE')
         trajectories.add('REF')
+        
         output = {}
         for traj in trajectories:
-            data = [v for k,v in sEEG.items() if k.find(traj)>-1]
-            traj_data = {}
-            for idx,vals in enumerate(data[0:-1]):
-                label = f'{traj}_{idx+1}_{idx+2}'
-                temp = self._bipolarReference(data[idx+1],vals)
-                # temp = notch(temp,self.fs,60,30,1)
-                traj_data[label] = temp 
-            output[traj] = traj_data
+            if bipolar:
+                data = [v for k,v in sEEG.items() if k.find(traj)>-1]
+                traj_data = {}
+                for idx,vals in enumerate(data[0:-1]):
+                    label = f'{traj}_{idx+1}_{idx+2}'
+                    temp = self._bipolarReference(data[idx+1],vals)
+                    # temp = notch(temp,self.fs,60,30,1)
+                    traj_data[label] = temp 
+                output[traj] = traj_data
+            else:
+                data = [v for k,v in sEEG.items() if k.find(traj)>-1]
+                traj_data = {}
+                for idx,vals in enumerate(data):
+                    label = f'{traj}_{idx+1}'
+                    temp = vals
+                    # temp = notch(temp,self.fs,60,30,1)
+                    traj_data[label] = temp 
+                output[traj] = traj_data
         output = alphaSortDict(output)
         return output
     
+    def _epochERPs(self):
+        """_epochERPs _summary_
+
+        Returns:
+            _type_: _description_
+        """
+        epochInfo = self.session.epoch_info
+        epochs = {}
+        for i,j in zip(epochInfo[0],epochInfo[1]):
+            m,r = epochInfo[0][i],epochInfo[1][j]
+            epochs[i] = [[p[0],p[1],q[1]] for p,q in zip(m,r)]
+        epochs['info'] = ['motor onset', 'motor offset', 'rest offset']
+        return epochs
+    
+    def extractAllERPs(self):
+        """extractAllERPs _summary_
+
+        Returns:
+            _type_: _description_
+        """
+        epochs = {}
+        for k,v in self.ERP_epochs.items(): # epoch information (muscle, list of intervals)
+            if k.find('info') < 0:
+                signals = {}
+                for sigType, values in self.session.data.items(): # (type of signal, dictionary of all data)
+                    trajectories = {}
+                    for traj, chan in values.items(): # (name of specific trajectory, recording sites on the trajectory)
+                        channel = {loc: [[data[on:end+1],[0,restOn-on+1,end-on+1]] for (on,restOn, end) in v] for loc, data in chan.items()} # dict comprehension to build epochs from intervals on each channel on a trajectory
+                        if sigType in signals:
+                            signals[sigType].update(channel) 
+                        else:
+                            signals[sigType] = channel
+                epochs[k] = signals
+        gammaERP = self.highGamma_ERP(epochs)
+        gammaERP.plotAverages_per_trajectory(self.subject)
+        plt.show()
+        return epochs
+                
+    def highGamma_ERP(self,data,power: bool=True)-> ERP_struct:
+        inputData = data
+        output = self.general_ERP(inputData, self.gammaRange,power=power)
+        return output
+    def beta_ERP(self,data,power: bool=True)-> ERP_struct:
+        inputData = data
+        output = self.general_ERP(inputData, [14,30],power=power)
+        return output
+    def mu_ERP(self,data,power: bool=True)-> ERP_struct:
+        inputData = data
+        output = self.general_ERP(inputData, [12,15],power=power)
+        return output
+    def broadband_ERP(self,data,power: bool=False)-> ERP_struct:
+        inputData = data
+        output = self.general_ERP(inputData,power=power)
+        return output
+    def general_ERP(self,epochs,filterBand:list = [0.5,170],power:bool=False)->ERP_struct:
+        """take epochs of data, overlay them per each channel and extract average ERPs
+        ----------
+        Parameters:
+            epochs (dictionary): nested dict of signal types epoch
+            filterBand (list, optional): lowcut and highcut for bandpass filtering. Defaults to [0.5,1000].
+            power (bool, optional): true if power of the signal should be computed via the hilbert transform. Defaults to False.
+        ----------
+        Returns:
+            ERP_struct: class with access to type, filterband, averages and raw data for an ERP,
+            also 
+        """
+        aggregateData = {}
+        for mv, data in epochs.items():
+            averages = {}
+            raw = {}
+            stdevs = {}
+            agg = data['sEEG']
+            agg.update(data['EMG'])
+            gen = ([channel,vals] for channel,vals in agg.items() if channel.find('REF')<0)
+            for i in gen:
+                channel = i[0]
+                temp = []
+                for epoch,info in i[1]:
+                    if not any(char.isdigit() for char in channel):
+                        "Parsing for EMG channels"
+                        if channel[0:3] != 'EMG': 
+                            channel = f'EMG_{channel}'       
+                    elif power:
+                        "Getting Timeseries Power"
+                        # if filterBand[1] - filterBand[0] > 10:
+                        #     filtBands = [[filterBand[0]+10*i,filterBand[0]+10*(i+1)] for i in range(int((filterBand[1]-filterBand[0])/10)-1)]
+                        # else:
+                        #     filtBands = [filterBand]
+                        # hold = []
+                        # for b in filtBands:
+                        #     d = bandpass(epoch,self.fs,b,order=4)
+                        #     hold.append(hilbert_env(d)**2)
+                        # epoch = sum(hold)
+                        epoch = bandpass(epoch,self.fs,filterBand,order=4)
+                        epoch = hilbert_env(epoch)**2
+                        epoch = zscore_normalize(epoch)
+                        epoch = moving_average_np(epoch,1000)
+                    else:
+                        "Just looking at voltage"
+                        epoch = bandpass(epoch,self.fs,filterBand,order=4)        
+                    temp.append(epoch)
+                averages[channel]=np.average(temp,axis=0)
+                stdevs[channel] = np.std(temp,axis=0)
+                raw[channel] = temp
+            aggregateData[mv] = [averages,stdevs,raw]
+        output = ERP_struct(aggregateData,filterBand,power,self.fs)
+        return output
+        
     def _segmentSignals(self,sigType:dict):
         out = {}
-        for k,i in self.session_info.channels.items():
+        for k,i in self.session.channels.items():
             if i == sigType:
-                out[k] = self.session_info.data[k]
+                out[k] = self.session.data[k]
         return out
     def _bipolarReference(self,a,b):
         return b-a  
@@ -264,9 +391,13 @@ class SCAN_SingleSessionAnalysis():
         move = pd.DataFrame()
         for k,d in self.move_epochs.items():
             move = pd.concat([move,self.epochs_to_df(d,k)])
+        typeCol = ['move' for _ in range(move.shape[0])]
+        move['class'] = typeCol
         rest = pd.DataFrame()
         for k,d in self.rest_epochs.items():
             rest = pd.concat([rest,self.epochs_to_df(d,k)])
+        typeCol = ['rest' for _ in range(rest.shape[0])]
+        rest['class'] = typeCol
         return move,rest
         
     def epochs_to_df(self,target:dict,ID:str):
@@ -303,9 +434,9 @@ class SCAN_SingleSessionAnalysis():
         if cond == 'rest':
             idx = 1
         epochs = {}
-        for muscle, intervals in self.session_info.epoch_info[idx].items(): # epoch information (muscle, list of intervals)
+        for muscle, intervals in self.session.epoch_info[idx].items(): # epoch information (muscle, list of intervals)
             signals = {}
-            for sigType, values in self.session_info.data.items(): # (type of signal, dictionary of all data)
+            for sigType, values in self.session.data.items(): # (type of signal, dictionary of all data)
                 trajectories = {}
                 for traj, chan in values.items(): # (name of specific trajectory, recording sites on the trajectory)
                     channel = {loc: [data[on:end+1] for (on, end) in intervals] for loc, data in chan.items()} # dict comprehension to build epochs from intervals on each channel on a trajectory
@@ -459,7 +590,7 @@ class SCAN_SingleSessionAnalysis():
         # out = np.mean([av1,av2],axis=0)
         # # aggregate[new_numCols] = sub_df2[numCols]
         data = {}
-        for i in self.session_info.data['sEEG'].values():
+        for i in self.session.data['sEEG'].values():
             data.update(i)
         
         window = window = sig.get_window('hann',Nx=self.fs)
@@ -538,8 +669,8 @@ class SCAN_SingleSessionAnalysis():
                 s = s_m.loc[chan,'avg_std']
                 r_sq = signed_cross_correlation(m,r,s)
                 temp[chan] = r_sq
-            ref = temp.pop('REF_1_2')
-            res[i] = temp
+            out = {i:temp[i] for i in temp.keys() if i.find('REF')<0}
+            res[i] = out
         
         return res
     def compute_power_distribution_significance(self,motor:pd.DataFrame,rest:pd.DataFrame,frequency_slice:list):
@@ -654,10 +785,10 @@ class SCAN_SingleSessionAnalysis():
             # ax.set_title('Metrics')
             # ax.tick_params(labelrotation=90)
 
-            fig = plt.figure(num=f'{self.session} {task}_hist')
+            fig = plt.figure(num=f'{self.sessionID} {task}_hist')
             ax = plt.gca()
             lab = task.split('_')
-            lab2 = self.session.split('_')
+            lab2 = self.sessionID.split('_')
             sns.histplot(df,x='value',hue='metric',ax=ax,stat='percent',kde=True,bins=numBins)
             ax.set_title(f'{lab[-1]}, {lab2} ')
             ax.axvline(0.5,label='Increase Boundary',c=(0,0,0),linestyle='--')
@@ -763,9 +894,9 @@ class SCAN_SingleSessionAnalysis():
                 size = 10
             
             ax.scatter(xs=h,ys=f,zs=t,s = size,color=c,label=lab)
-        threshDict = {f'{k[0].split("_")[0]}{k[0].split("_")[1]}_{k[0].split("_")[2]}':xyz[k[1]] for k in threshLabs}
+        threshDict = {f'{k[0].split("_")[0]}{k[0].split("_")[1]}':xyz[k[1]] for k in threshLabs}
         if clusterFlag and exportFlag:
-            filename = f'{self.subject}_{self.session}_{title}_{effectLabel}_cluster_result.mat'
+            filename = f'{self.subject}_{self.sessionID}_{title}_{effectLabel}_cluster_result.mat'
             self._validateDir(self.saveRoot)
             output = {'clusterRes':threshDict}
             scio.savemat(self.saveRoot/filename,mdict=output,format='5')
@@ -835,7 +966,6 @@ class SCAN_SingleSessionAnalysis():
                     out[c] = temp
         return out
 
-        
 def epoch_powerAverage(a,f_slice = [0]):
     averagePower = np.empty(len(a))
     for i,epoch in enumerate(a):
@@ -893,119 +1023,6 @@ def method_plot(y,x = False, log = False, logx = False,logy=False):
         ax.set_xlabel(xlab)
     return fig, ax
 
-
-# class format_Stimulus_Presentation_Session():
-    def __init__(self,loc:Path,subject,plot_stimuli=False,HDF:bool=False):
-        """
-        Formats the 4 preprocessed filed from MATLAB into a data object
-        
-        Parameters
-        ----------
-        loc: Path
-            path to preprocessed directory
-        subject: str
-            individual subject ID
-        """
-        self.root = loc.parent
-        files = os.listdir(loc)
-        for file in files:
-            if file.find(subject)>-1:
-                if HDF:
-                    # need to write HDF5 parser. 
-                    # with h5py.File(loc/file, 'r') as f:
-                    #     # data = {key: f[key][()] for key in f.keys()}
-                    #     data = f['agg_signals'][()]
-                    data = {}
-                    hf = h5py.File(loc/file,'r')
-                    temp = hf['agg_signals']
-                    keys = list(temp.keys())
-                    for k in keys:
-                        data[k] = temp[k][0]
-                    self.data = data
-                    print(0)
-
-                else:    
-                    data = scio.loadmat(loc/file,mat_dtype=True,simplify_cells=True)
-                    self.data = data['signals']
-            elif file.find('channeltypes')>-1:
-                channels = scio.loadmat(loc/file,mat_dtype=True,simplify_cells=True)
-                self.channels = channels['chan_types']
-            elif file.find('states')>-1:
-                states = scio.loadmat(loc/file,mat_dtype=True,simplify_cells=True)
-                self.states = states['states']
-                self.states = self._reshapeStates()
-                
-            elif file.find('stimuli')>-1:
-                stimuli = scio.loadmat(loc/file,mat_dtype=True,simplify_cells=True)
-                stimuli = stimuli['stim_codes']
-                self.stimuli = self.reshapeStimuliMatrix(stimuli=stimuli)
-            else:
-                print(f'{file} not loaded on init')
-        self.epoch_info = self.epochStimulusCode(plot_stimuli)
-
-    def reshapeStimuliMatrix(self,stimuli):
-        keys = stimuli[0].keys()
-        output = {}
-        for value,key in enumerate(keys):
-            temp = []
-            for entry in stimuli:
-                temp.append(entry[key])
-            temp.insert(0,{'code':value+1})
-            output[key] = temp
-        return output
-    def epochStimulusCode(self,plot_states):
-        data = self.states['StimulusCode']
-        moveEpochs = {}
-        onset_shift = 1000
-        offset_shift = 3000
-        for stim in self.stimuli.values(): # get intervals for each of the stimuls codes
-            code = stim[0]['code']
-            stim_type = stim[6]
-            loc = np.where(data==code)
-            intervals = find_intervals(loc[0])
-            for i,v in enumerate(intervals):
-                intervals[i] = [v[0]-onset_shift,v[1]+offset_shift]
-
-            moveEpochs[stim_type] = intervals
-        loc = np.where(data==0) # get intervals for stim code of zero (at rest)
-        intervals = find_intervals(loc[0])
-        for i,v in enumerate(intervals):
-                intervals[i] = [offset_shift+v[0],v[1]-onset_shift]
-        restEpochs = {}
-        for k, int_set in moveEpochs.items():
-            temp = []
-            for i in int_set:
-                onset = i[1]+1
-                temp.append(extractInterval(intervals,onset))
-            restEpochs[k] = temp                
-
-        # epochs['rest'] = intervals[1:]
-        if plot_states:
-            self.plotStimuli(moveEpochs)
-        return moveEpochs, restEpochs
-    def _reshapeStates(self):
-        states = {}
-        for state, val in self.states.items():
-            mode = stats.mode(val).count
-            if len(val) == mode:
-                pass # Exclude states that do not contain any information, ie array contains all of one value. 
-            else:
-                states[state] = val
-        return states
-    def plotStimuli(self,epochs):
-        data = self.states['StimulusCode']
-        t = np.linspace(0,len(data)/2000,len(data))
-        fig=plt.figure()
-        ax = plt.subplot(1,1,1)
-        ax.plot(t,data)
-        for i in epochs.values():
-            for j in i:
-                ax.axvline(t[j[0]], c=(0,1,0))
-                ax.axvline(t[j[1]], c=(1,0,0))
-        scio.savemat(self.root/'analyzed'/'stimcode.mat',{'stim':data})
-        scio.savemat(self.root/'analyzed'/'stimuli.mat',epochs)
-        plt.show()
-
 def alphaSortDict(a:dict)->dict:
     sortkeys = sorted(a)
     output = {k:a[k] for k in sortkeys}
@@ -1058,16 +1075,17 @@ if __name__ == '__main__':
     localEnv = platform.system()
     userPath = Path(os.path.expanduser('~'))
     if localEnv == 'Windows':
-        dataPath = userPath / "Box\Brunner Lab\DATA\SCAN_Mayo"
+        dataPath = userPath / r"Box\Brunner Lab\DATA\SCAN_Mayo"
     else:
         dataPath = userPath/"Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo"
     subject = 'BJH045'
     session = 'pre_ablation'
     # session = 'post_ablation'
-    session = 'day3_run1'
+    session = 'aggregate'
     gammaRange = [70,170]
     a = SCAN_SingleSessionAnalysis(dataPath,subject,session,load=True,plot_stimuli=False,gammaRange=gammaRange)
-    a.probeSignalQuality('OR_7_8')
+    # a.extractAllERPs()
+    # a.probeSignalQuality('OR_7_8')
     # a.export_session_EMG()
     # a.export_epochs(signalType='EMG',fname='emg')
     r_sq, p_vals, U_res, d_res,roc_res = a.taskPowerCorrelation_analysis(saveMAT=False)
@@ -1075,12 +1093,11 @@ if __name__ == '__main__':
     row = 2; col =1
     ax = fig.add_subplot(row, col, 1, projection='3d')
     ax.view_init(elev=30, azim=105, roll=0)
-    a.runEffectClusters(d_res,0.5,title='all channels',clusterFlag=True,ax=ax,for_subplot=True, effectLabel='(d)')
+    a.runEffectClusters(r_sq,0.2,title='all channels',clusterFlag=True,ax=ax,for_subplot=True, effectLabel='(d)')
     sig_chans, nonsig_chans = a.returnSignificantLocations(p_vals,alpha=0.05)
     ax2 = fig.add_subplot(row, col, 2, projection='3d')
     ax2.view_init(elev=30, azim=105, roll=0)
-
-    a.runEffectClusters(d_res,0.5,dataSubset=sig_chans,title='significant channels',clusterFlag=True, num_clusters=5,ax=ax2,for_subplot=True,effectLabel='(d)',exportFlag=True)
+    a.runEffectClusters(r_sq,0.2,dataSubset=sig_chans,title='significant channels',clusterFlag=True, num_clusters=5,ax=ax2,for_subplot=True,effectLabel='(d)',exportFlag=True)
     # plt.show()
     sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
     # a.scatterMetrics(sig_r,sig_d,sig_roc,sig_U) # significant Channels

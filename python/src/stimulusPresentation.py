@@ -132,9 +132,9 @@ def find_intervals(array):
             # Start a new interval with the current element
             start = array[i]
     
-    # Add the last interval if the array does not end on a jump
-    if len(array) > 1 and array[-1] - array[-2] == 1:
-        intervals.append((start, array[-1]))
+    # Add the last interval if the array does not end on a jump based on length of previous intervals
+    int_length = intervals[-1][1] - intervals[-1][0]
+    intervals.append((start, start+int_length))
 
     return intervals
 

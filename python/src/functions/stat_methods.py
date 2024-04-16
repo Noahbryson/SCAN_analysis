@@ -104,6 +104,17 @@ def biserialSpearmanCorrelation(a,b):
     # implementation of this will require broadband gamma timeseries power
     return 0
 
-
-
+def confidence_interval(a, alpha: float=0.95):
+    if len(np.shape(a)) == 1:
+        CI = stats.t.interval(confidence=alpha, df = len(a)-1,
+                loc=np.mean(a),scale=stats.sem(a))
+        return CI
+    else:
+        a = np.transpose(a)
+        output = np.zeros((len(a),2))
+        for i,j in enumerate(a):
+            CI = stats.t.interval(confidence=alpha, df = len(j)-1,
+                    loc=np.mean(j),scale=stats.sem(j))
+            output[i] = CI
+        return output
 
