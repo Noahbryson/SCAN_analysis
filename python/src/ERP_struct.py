@@ -62,7 +62,7 @@ class ERP_struct():
                   for i,(vals,ax) in enumerate(zip(data,fig.axes)):
                         keys = list(vals.keys())
                         cs = [(0.2,0.4,0.9),(0.4,0.9,0.2),(0.9,0.1,0.4)]
-                        t = np.linspace(0,len(vals[keys[0]][0])/self.fs,len(vals[keys[0]][0]))                        
+                        t = np.linspace(-0.5,len(vals[keys[0]][0])/self.fs,len(vals[keys[0]][0]))                        
                         # a.set_visible(True)
                         ax.plot(t,vals[keys[0]][0], label=keys[0],color=cs[0])
                         ax.plot(t,vals[keys[1]][0], label=keys[1],color=cs[1])

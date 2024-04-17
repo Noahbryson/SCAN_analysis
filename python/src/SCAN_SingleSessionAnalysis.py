@@ -63,6 +63,7 @@ class SCAN_SingleSessionAnalysis():
             HDF = False
         self.gammaRange = gammaRange
         self.session = format_Stimulus_Presentation_Session(dataLoc,subject,plot_stimuli=plot_stimuli,HDF=HDF)
+        self.session.epoch_info = self.session.epochStimulusCode_SCANtask(False)
         self.signalTypes = set(self.session.channels.values())
         self.colorPalletBest = [(62/255,108/255,179/255), (27/255,196/255,225/255), (129/255,199/255,238/255),(44/255,184/255,149/255),(0,129/255,145/255), (193/255,189/255,47/255),(200/255,200/255,200/255)]
         self.session.data = self._processSignals(load)
@@ -282,7 +283,7 @@ class SCAN_SingleSessionAnalysis():
                 for sigType, values in self.session.data.items(): # (type of signal, dictionary of all data)
                     trajectories = {}
                     for traj, chan in values.items(): # (name of specific trajectory, recording sites on the trajectory)
-                        channel = {loc: [[data[on:end+1],[0,restOn-on+1,end-on+1]] for (on,restOn, end) in v] for loc, data in chan.items()} # dict comprehension to build epochs from intervals on each channel on a trajectory
+                        channel = {loc: [[data[on-1000:end+1],[0,restOn-on+1,end-on+1]] for (on,restOn, end) in v] for loc, data in chan.items()} # dict comprehension to build epochs from intervals on each channel on a trajectory
                         if sigType in signals:
                             signals[sigType].update(channel) 
                         else:
@@ -1084,7 +1085,7 @@ if __name__ == '__main__':
     session = 'aggregate'
     gammaRange = [70,170]
     a = SCAN_SingleSessionAnalysis(dataPath,subject,session,load=True,plot_stimuli=False,gammaRange=gammaRange)
-    # a.extractAllERPs()
+    a.extractAllERPs()
     # a.probeSignalQuality('OR_7_8')
     # a.export_session_EMG()
     # a.export_epochs(signalType='EMG',fname='emg')

@@ -53,7 +53,7 @@ class format_Stimulus_Presentation_Session():
                 self.stimuli = self.reshapeStimuliMatrix(stimuli=stimuli)
             else:
                 print(f'{file} not loaded on init')
-        self.epoch_info = self.epochStimulusCode(plot_stimuli)
+        self.epoch_info = self.epochStimulusCode_SCANtask(plot_stimuli)
 
     def reshapeStimuliMatrix(self,stimuli):
         keys = stimuli[0].keys()
@@ -65,12 +65,12 @@ class format_Stimulus_Presentation_Session():
             temp.insert(0,{'code':value+1})
             output[key] = temp
         return output
-    def epochStimulusCode(self,plot_states):
+    def epochStimulusCode_SCANtask(self,plot_states:False):
         data = self.states['StimulusCode']
         moveEpochs = {}
         onset_shift = 1000
         offset_shift = 3000
-        for stim in self.stimuli.values(): # get intervals for each of the stimuls codes
+        for stim in self.stimuli.values(): # get intervals for each of the stimulus codes
             code = stim[0]['code']
             stim_type = stim[6]
             loc = np.where(data==code)
@@ -89,9 +89,13 @@ class format_Stimulus_Presentation_Session():
             for i in int_set:
                 onset = i[1]+1
                 temp.append(extractInterval(intervals,onset))
+            mode_int = stats.mode([i[1]-i[0] for i in temp]).mode
+            for i in temp:
+                if (i[1]-i[0]) != mode_int:
+                    i[1] = i[0] + mode_int
+
             restEpochs[k] = temp                
 
-        # epochs['rest'] = intervals[1:]
         if plot_states:
             self.plotStimuli(moveEpochs)
         return moveEpochs, restEpochs
