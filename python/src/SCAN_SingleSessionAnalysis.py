@@ -1,13 +1,7 @@
 import os
-cwd = os.getcwd()
-print(os.getcwd())
-# os.chdir(f'{cwd}\python')
-# print(os.getcwd())
 import csv
-import h5py
 from pathlib import Path
 import scipy.io as scio
-import scipy.stats as stats
 import pandas as pd
 from functions.filters import *
 import math
@@ -19,7 +13,7 @@ from functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, euclidean_d
 from stimulusPresentation import format_Stimulus_Presentation_Session
 from ERP_struct import ERP_struct
 
-class SCAN_SingleSessionAnalysis():
+class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
     def __init__(self,path:str or Path,subject:str,sessionID:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False,gammaRange=[65,115]) -> None: # type: ignore
         """
         Module containing functions for single session analysis of BCI2000 SCAN task
@@ -62,14 +56,14 @@ class SCAN_SingleSessionAnalysis():
         else:
             HDF = False
         self.gammaRange = gammaRange
-        self.session = format_Stimulus_Presentation_Session(dataLoc,subject,plot_stimuli=plot_stimuli,HDF=HDF)
-        self.session.epoch_info = self.session.epochStimulusCode_SCANtask(False)
-        self.signalTypes = set(self.session.channels.values())
+        super().__init__(dataLoc,subject,plot_stimuli=plot_stimuli,HDF=HDF)
+        self.epoch_info = self.epochStimulusCode_SCANtask(plot_stimuli)
+        self.signalTypes = set(self.channels.values())
         self.colorPalletBest = [(62/255,108/255,179/255), (27/255,196/255,225/255), (129/255,199/255,238/255),(44/255,184/255,149/255),(0,129/255,145/255), (193/255,189/255,47/255),(200/255,200/255,200/255)]
-        self.session.data = self._processSignals(load)
+        self.data = self._processSignals(load)
         # self.session_info.data = self.getBroadBandGamma(gammaType='wide')
-        self.sessionEMG = self.session.data['EMG']
-        self.session.data['sEEG'], self.ref = self.remove_references()
+        self.sessionEMG = self.data['EMG']
+        self.data['sEEG'], self.ref = self.remove_references()
         self.ERP_epochs = self._epochERPs()
         self.move_epochs = self._epochData('move')
         self.rest_epochs = self._epochData('rest')
@@ -103,19 +97,19 @@ class SCAN_SingleSessionAnalysis():
             print('preprocessed the data')
         return signalGroups
     def remove_references(self):
-        data = {k:v for k,v in self.session.data['sEEG'].items() if k.find('REF')<0}
-        ref = {k:v for k,v in self.session.data['sEEG'].items() if k.find('REF')>=0}
+        data = {k:v for k,v in self.data['sEEG'].items() if k.find('REF')<0}
+        ref = {k:v for k,v in self.data['sEEG'].items() if k.find('REF')>=0}
         return data, ref
 
     def probeSignalQuality(self,channel:str=''):
-        allChans = list(self.session.data['sEEG'].keys())
+        allChans = list(self.data['sEEG'].keys())
         if channel == '':
             shank = allChans[0]
-            data = list(self.session.data['sEEG'][shank].keys())
+            data = list(self.data['sEEG'][shank].keys())
             channel = data[0]
         else:
             shank = channel.split('_')[0]
-        data = self.session.data['sEEG'][shank][channel]
+        data = self.data['sEEG'][shank][channel]
         f,pxx = sig.welch(x=data,fs=self.fs,window=sig.get_window('hann',Nx=self.fs),scaling='density')
         t = np.linspace(0,len(data)/self.fs,len(data))
         alpha = bandpass(data,self.fs,[8,13],4)
@@ -141,7 +135,7 @@ class SCAN_SingleSessionAnalysis():
 
 
     def getBroadBandGamma(self,gammaType:str=''):
-        data = self.session.data.copy()
+        data = self.data.copy()
         if gammaType.lower() =='wide':
             bandSplit = ([70,80],[80,90],[90,100],[100,110],[110,120],[120,130],[130,140],[140,150],[150,160],[160,170])
         else:
@@ -262,7 +256,7 @@ class SCAN_SingleSessionAnalysis():
         Returns:
             _type_: _description_
         """
-        epochInfo = self.session.epoch_info
+        epochInfo = self.epoch_info
         epochs = {}
         for i,j in zip(epochInfo[0],epochInfo[1]):
             m,r = epochInfo[0][i],epochInfo[1][j]
@@ -280,10 +274,10 @@ class SCAN_SingleSessionAnalysis():
         for k,v in self.ERP_epochs.items(): # epoch information (muscle, list of intervals)
             if k.find('info') < 0:
                 signals = {}
-                for sigType, values in self.session.data.items(): # (type of signal, dictionary of all data)
+                for sigType, values in self.data.items(): # (type of signal, dictionary of all data)
                     trajectories = {}
                     for traj, chan in values.items(): # (name of specific trajectory, recording sites on the trajectory)
-                        channel = {loc: [[data[on-1000:end+1],[0,restOn-on+1,end-on+1]] for (on,restOn, end) in v] for loc, data in chan.items()} # dict comprehension to build epochs from intervals on each channel on a trajectory
+                        channel = {loc: [[data[on:end+1],[0,restOn-on+1,end-on+1]] for (on,restOn, end) in v] for loc, data in chan.items()} # dict comprehension to build epochs from intervals on each channel on a trajectory
                         if sigType in signals:
                             signals[sigType].update(channel) 
                         else:
@@ -366,9 +360,9 @@ class SCAN_SingleSessionAnalysis():
         
     def _segmentSignals(self,sigType:dict):
         out = {}
-        for k,i in self.session.channels.items():
+        for k,i in self.channels.items():
             if i == sigType:
-                out[k] = self.session.data[k]
+                out[k] = self.data[k]
         return out
     def _bipolarReference(self,a,b):
         return b-a  
@@ -435,9 +429,9 @@ class SCAN_SingleSessionAnalysis():
         if cond == 'rest':
             idx = 1
         epochs = {}
-        for muscle, intervals in self.session.epoch_info[idx].items(): # epoch information (muscle, list of intervals)
+        for muscle, intervals in self.epoch_info[idx].items(): # epoch information (muscle, list of intervals)
             signals = {}
-            for sigType, values in self.session.data.items(): # (type of signal, dictionary of all data)
+            for sigType, values in self.data.items(): # (type of signal, dictionary of all data)
                 trajectories = {}
                 for traj, chan in values.items(): # (name of specific trajectory, recording sites on the trajectory)
                     channel = {loc: [data[on:end+1] for (on, end) in intervals] for loc, data in chan.items()} # dict comprehension to build epochs from intervals on each channel on a trajectory
@@ -591,7 +585,7 @@ class SCAN_SingleSessionAnalysis():
         # out = np.mean([av1,av2],axis=0)
         # # aggregate[new_numCols] = sub_df2[numCols]
         data = {}
-        for i in self.session.data['sEEG'].values():
+        for i in self.data['sEEG'].values():
             data.update(i)
         
         window = window = sig.get_window('hann',Nx=self.fs)

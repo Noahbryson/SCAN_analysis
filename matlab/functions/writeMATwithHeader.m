@@ -8,5 +8,5 @@ if removeEmpty
     signals = rmfield(signals,rm_fields);
     
 end
-save(fpath,'signals','-mat','-v7');
+save(fpath,'signals','-mat','-v7.3');
 end

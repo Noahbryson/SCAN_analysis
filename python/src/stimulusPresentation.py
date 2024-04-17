@@ -29,7 +29,10 @@ class format_Stimulus_Presentation_Session():
                     #     data = f['agg_signals'][()]
                     data = {}
                     hf = h5py.File(loc/file,'r')
-                    temp = hf['agg_signals']
+                    try:
+                        temp = hf['agg_signals']
+                    except KeyError:
+                        temp = hf['signals']
                     keys = list(temp.keys())
                     for k in keys:
                         data[k] = temp[k][0]
@@ -53,7 +56,7 @@ class format_Stimulus_Presentation_Session():
                 self.stimuli = self.reshapeStimuliMatrix(stimuli=stimuli)
             else:
                 print(f'{file} not loaded on init')
-        self.epoch_info = self.epochStimulusCode_SCANtask(plot_stimuli)
+        
 
     def reshapeStimuliMatrix(self,stimuli):
         keys = stimuli[0].keys()
@@ -142,6 +145,16 @@ def find_intervals(array):
 
     return intervals
 
+
+class screening_session(object):
+    """docstring for screening_session."""
+    def __init__(self, loc:Path,subject:str,plot_stimuli: bool=False, HDF:bool=True):
+        super(screening_session, self).__init__()
+        self.motor =        format_Stimulus_Presentation_Session(loc/'motor/preprocessed',subject,plot_stimuli=plot_stimuli,HDF=HDF)
+        self.sensory =      format_Stimulus_Presentation_Session(loc/'sensory/preprocessed',subject,plot_stimuli=plot_stimuli,HDF=HDF)
+        self.sensorimotor = format_Stimulus_Presentation_Session(loc/'sensory-motor/preprocessed',subject,plot_stimuli=plot_stimuli,HDF=HDF)
+
+
 def extractInterval(intervals,b):
     for i in intervals:
         if i[0] ==b: 
@@ -150,3 +163,4 @@ def extractInterval(intervals,b):
 
 def sliceArray(array, interval):
     return array[interval[0]:interval[1]]
+
