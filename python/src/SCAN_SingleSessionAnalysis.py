@@ -58,7 +58,6 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         self.gammaRange = gammaRange
         super().__init__(dataLoc,subject,plot_stimuli=plot_stimuli,HDF=HDF)
         self.epoch_info = self.epochStimulusCode_SCANtask(plot_stimuli)
-        self.signalTypes = set(self.channels.values())
         self.colorPalletBest = [(62/255,108/255,179/255), (27/255,196/255,225/255), (129/255,199/255,238/255),(44/255,184/255,149/255),(0,129/255,145/255), (193/255,189/255,47/255),(200/255,200/255,200/255)]
         self.data = self._processSignals(load)
         # self.session_info.data = self.getBroadBandGamma(gammaType='wide')

@@ -4,7 +4,7 @@ from pathlib import Path
 import scipy.io as scio
 import scipy.stats as stats
 from functions.filters import *
-
+import pickle
 
 class format_Stimulus_Presentation_Session():
     def __init__(self,loc:Path,subject,plot_stimuli=False,HDF:bool=False):
@@ -20,6 +20,8 @@ class format_Stimulus_Presentation_Session():
         """
         self.root = loc.parent
         files = os.listdir(loc)
+        self.name = 'stim_presentation'
+        self.epoch_info = {} # intialize empty as different experiments have different requirements for this variable.
         for file in files:
             if file.find(subject)>-1:
                 if HDF:
@@ -53,12 +55,21 @@ class format_Stimulus_Presentation_Session():
             elif file.find('stimuli')>-1:
                 stimuli = scio.loadmat(loc/file,mat_dtype=True,simplify_cells=True)
                 stimuli = stimuli['stim_codes']
-                self.stimuli = self.reshapeStimuliMatrix(stimuli=stimuli)
+                self.stimuli = self._reshapeStimuliMatrix(stimuli=stimuli)
             else:
                 print(f'{file} not loaded on init')
-        
+        temp = {k:self.channels[k] for k in self.data.keys()}
+        self.channels = temp
+        self.signalTypes = set(self.channels.values())
+        # if os.path.exists(self.main_dir/self.subject/'muscle_mapping.csv'):
+        #         with open(self.main_dir/self.subject/'muscle_mapping.csv', 'r') as fp:
+        #             reader = csv.reader(fp)
+        #             self.muscleMapping = {rows[0]:rows[1:] for rows in reader}
+        # else:
+        #         self.muscleMapping = {'1_Hand':['wristExtensor', 'ulnar'], '3_Foot':['TBA'],'2_Tongue':['tongue']}
 
-    def reshapeStimuliMatrix(self,stimuli):
+
+    def _reshapeStimuliMatrix(self,stimuli):
         keys = stimuli[0].keys()
         output = {}
         for value,key in enumerate(keys):
@@ -68,6 +79,13 @@ class format_Stimulus_Presentation_Session():
             temp.insert(0,{'code':value+1})
             output[key] = temp
         return output
+    def _saveSelf(self,loc: Path):
+        # TODO: make these modules save and load themselves from files to speed up operations, especially since this operation does not alter the data in any way.
+        # https://stackoverflow.com/questions/2709800/how-to-pickle-yourself
+        fname = loc/'session_aggregate.pkl'
+        with open(fname, 'wb') as fp:
+            pickle.dump(self)
+
     def epochStimulusCode_SCANtask(self,plot_states:False):
         data = self.states['StimulusCode']
         moveEpochs = {}
@@ -102,6 +120,23 @@ class format_Stimulus_Presentation_Session():
         if plot_states:
             self.plotStimuli(moveEpochs)
         return moveEpochs, restEpochs
+    
+    def epochStimulusCode_screening(self,plot_states:False):
+        data = self.states['StimulusCode']
+        epochs = {}
+        onset_shift = 0
+        offset_shift = 0
+        for stim in self.stimuli.values(): # get intervals for each of the stimulus codes
+            code = stim[0]['code']
+            stim_type = f'{stim[1]}_{code}'
+            loc = np.where(data==code)
+            intervals = find_intervals(loc[0])
+            for i,v in enumerate(intervals):
+                intervals[i] = [v[0]-onset_shift,v[1]+offset_shift]
+            epochs[stim_type] = intervals
+        if plot_states:
+            self.plotStimuli(epochs)
+        return epochs
     def _reshapeStates(self):
         states = {}
         for state, val in self.states.items():
@@ -112,17 +147,29 @@ class format_Stimulus_Presentation_Session():
                 states[state] = val
         return states
     def plotStimuli(self,epochs):
+        import distinctipy
         data = self.states['StimulusCode']
         t = np.linspace(0,len(data)/2000,len(data))
         fig=plt.figure()
         ax = plt.subplot(1,1,1)
         ax.plot(t,data)
-        for i in epochs.values():
-            for j in i:
-                ax.axvline(t[j[0]], c=(0,1,0))
-                ax.axvline(t[j[1]], c=(1,0,0))
-        scio.savemat(self.root/'analyzed'/'stimcode.mat',{'stim':data})
-        scio.savemat(self.root/'analyzed'/'stimuli.mat',epochs)
+        cmap = distinctipy.get_colors(len(epochs))
+        for i,k in enumerate(epochs.keys()):
+            val = int(k.split('_')[-1])
+            for q,j in enumerate(epochs[k]):
+                if q == 0:
+                    # ax.axvline(t[j[0]], c=cmap[i], label=k)
+                    # ax.axvline(t[j[1]], c=(0,0,0),label='_')
+                    ax.plot(t[j[0]:j[1]],val*np.ones(len(t[j[0]:j[1]])),c=cmap[i], label=k)
+                else:
+                    # ax.axvline(t[j[0]], c=cmap[i],label='_')
+                    # ax.axvline(t[j[1]], c=(0,0,0),label='_')
+                    ax.plot(t[j[0]:j[1]],val*np.ones(len(t[j[0]:j[1]])),c=cmap[i], label="_")
+        # scio.savemat(self.root/'analyzed'/'stimcode.mat',{'stim':data})
+        # scio.savemat(self.root/'analyzed'/'stimuli.mat',epochs)
+        ax.set_ylim(-1,max(data)+2)
+        ax.legend()
+        ax.set_title(self.name)
         plt.show()
 def find_intervals(array):
     # Initialize the list of intervals
@@ -140,20 +187,27 @@ def find_intervals(array):
             start = array[i]
     
     # Add the last interval if the array does not end on a jump based on length of previous intervals
-    int_length = intervals[-1][1] - intervals[-1][0]
-    intervals.append((start, start+int_length))
-
+    if len(intervals) > 0:
+        int_length = intervals[-1][1] - intervals[-1][0]
+        intervals.append((start, start+int_length))
+    else:
+        intervals = [(array[0],array[-1])]
     return intervals
 
 
 class screening_session(object):
     """docstring for screening_session."""
+    # TODO: make these modules save and load themselves from files to speed up operations, especially since this operation does not alter the data in any way.
+    # https://stackoverflow.com/questions/2709800/how-to-pickle-yourself
+        
     def __init__(self, loc:Path,subject:str,plot_stimuli: bool=False, HDF:bool=True):
         super(screening_session, self).__init__()
         self.motor =        format_Stimulus_Presentation_Session(loc/'motor/preprocessed',subject,plot_stimuli=plot_stimuli,HDF=HDF)
+        self.motor.name = 'motor'
         self.sensory =      format_Stimulus_Presentation_Session(loc/'sensory/preprocessed',subject,plot_stimuli=plot_stimuli,HDF=HDF)
+        self.sensory.name = 'sensory'
         self.sensorimotor = format_Stimulus_Presentation_Session(loc/'sensory-motor/preprocessed',subject,plot_stimuli=plot_stimuli,HDF=HDF)
-
+        self.sensorimotor.name = 'sensorimotor'
 
 def extractInterval(intervals,b):
     for i in intervals:
