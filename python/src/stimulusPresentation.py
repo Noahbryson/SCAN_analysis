@@ -68,7 +68,15 @@ class format_Stimulus_Presentation_Session():
         # else:
         #         self.muscleMapping = {'1_Hand':['wristExtensor', 'ulnar'], '3_Foot':['TBA'],'2_Tongue':['tongue']}
 
-
+    def getCommonAverages(self):
+        common_avg = {}
+        for sigtype in self.signalTypes:
+            temp = []
+            for channel,t in self.channels.items():
+                if t==sigtype:
+                    temp.append(self.data[channel])
+            common_avg[sigtype] = np.mean(temp,axis=0)
+        return common_avg
     def _reshapeStimuliMatrix(self,stimuli):
         keys = stimuli[0].keys()
         output = {}
