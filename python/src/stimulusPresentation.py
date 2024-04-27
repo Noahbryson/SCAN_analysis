@@ -5,7 +5,7 @@ import scipy.io as scio
 import scipy.stats as stats
 from functions.filters import *
 import pickle
-
+import pandas as pd 
 class format_Stimulus_Presentation_Session():
     def __init__(self,loc:Path,subject,plot_stimuli=False,HDF:bool=False):
         """
@@ -22,6 +22,8 @@ class format_Stimulus_Presentation_Session():
         files = os.listdir(loc)
         self.name = 'stim_presentation'
         self.epoch_info = {} # intialize empty as different experiments have different requirements for this variable.
+        self.task_epochs = {}
+        self.rest_epochs = {}
         for file in files:
             if file.find(subject)>-1:
                 if HDF:
@@ -139,12 +141,49 @@ class format_Stimulus_Presentation_Session():
             stim_type = f'{stim[1]}_{code}'
             loc = np.where(data==code)
             intervals = find_intervals(loc[0])
-            for i,v in enumerate(intervals):
-                intervals[i] = [v[0]-onset_shift,v[1]+offset_shift]
+            # if len(np.shape(intervals))==1:
+            #     intervals[0] = intervals[0]-onset_shift
+            #     intervals[1] = intervals[1]+offset_shift
+            # else:
+            #     for i,v in enumerate(intervals):
+            #         intervals[i] = [v[0]-onset_shift,v[1]+offset_shift]
             epochs[stim_type] = intervals
         if plot_states:
-            self.plotStimuli(epochs)
+            self.plotStimuli(epochs)    
+        item_keys = set([i.split('_')[0] for i in epochs.keys()])
+        output = {k:[] for k in item_keys}
+        for k,v in epochs.items():
+            kt = k.split('_')[0]
+            if kt in item_keys:
+                output[kt].append(v)
+        restInts = epochs['stop and relax_1']
+        restOnsets = np.array([i[0] for i in restInts],dtype=int)
+        taskEpochs = {}
+        restEpochs = {}
+        for k,v in output.items():
+            if k.find('stop')<0:
+                if len(v) == 1:
+                    v = v[0]
+                temp = []
+                for i in v:
+                    loc = getNearestGreaterValueLoc(i[-1],restOnsets)
+                    temp.append(restInts[loc])
+                restEpochs[k] = temp
+                taskEpochs[k] = v
+        self.task_epochs = taskEpochs
+        self.rest_epochs = restEpochs               
         return epochs
+    
+    def orderedEpochDf(self,task:dict,rest:dict):
+        cols = ['task','taskInt','restInt','trial']
+        temp = []
+        for t,r in zip(task.keys(),rest.keys()):
+            for i,(j,k) in enumerate(zip(task[t],rest[r])):
+                temp.append([t,j,k,i+1])
+        out = pd.DataFrame(temp,columns=cols)
+        return out
+    
+    
     def _reshapeStates(self):
         states = {}
         for state, val in self.states.items():
@@ -197,9 +236,9 @@ def find_intervals(array):
     # Add the last interval if the array does not end on a jump based on length of previous intervals
     if len(intervals) > 0:
         int_length = intervals[-1][1] - intervals[-1][0]
-        intervals.append((start, start+int_length))
+        intervals.append([start, start+int_length])
     else:
-        intervals = [(array[0],array[-1])]
+        intervals = [array[0],array[-1]]
     return intervals
 
 
@@ -226,3 +265,9 @@ def extractInterval(intervals,b):
 def sliceArray(array, interval):
     return array[interval[0]:interval[1]]
 
+def getNearestGreaterValueLoc(value, b:np.ndarray):
+    # a = b[np.where(b>value)]
+    # output = min(a,key=lambda x:(x-value))
+    # outputIdx, = np.where(a==output)
+    outputIdx, = np.where((b-value)==1)
+    return outputIdx[0]

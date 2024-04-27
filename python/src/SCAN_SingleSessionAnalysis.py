@@ -11,7 +11,7 @@ from sklearn import metrics
 from sklearn.cluster import KMeans
 from functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, euclidean_distance
 from stimulusPresentation import format_Stimulus_Presentation_Session
-from ERP_struct import ERP_struct
+from response_datastructs import ERP_struct
 
 class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
     def __init__(self,path:str or Path,subject:str,sessionID:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False,gammaRange=[65,115]) -> None: # type: ignore
@@ -64,12 +64,12 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         self.sessionEMG = self.data['EMG']
         self.data['sEEG'], self.ref = self.remove_references()
         self.ERP_epochs = self._epochERPs()
-        self.move_epochs = self._epochData('move')
+        self.task_epochs = self._epochData('move')
         self.rest_epochs = self._epochData('rest')
         self.motor_onset = self._EMG_activity_epochs(testplots=False)
-        self.move_epochs,self.rest_epochs = self.reshape_epochs()
+        self.task_epochs,self.rest_epochs = self.reshape_epochs()
         if epoch_by_movement:
-            self.move_epochs = self._epoch_via_EMG()
+            self.task_epochs = self._epoch_via_EMG()
         
         print('end init')
 
@@ -368,7 +368,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
     def export_epochs(self,signalType,fname):
         out = {}
         for i in list(self.muscleMapping.keys()):
-            move = self.move_epochs.query("type==@signalType & movement==@i")
+            move = self.task_epochs.query("type==@signalType & movement==@i")
             numCols = [i for i in move.columns if type(i)==int]
             for row in move.iterrows():
                 temp = row[1][numCols].to_numpy()
@@ -383,7 +383,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
 
     def reshape_epochs(self):
         move = pd.DataFrame()
-        for k,d in self.move_epochs.items():
+        for k,d in self.task_epochs.items():
             move = pd.concat([move,self.epochs_to_df(d,k)])
         typeCol = ['move' for _ in range(move.shape[0])]
         move['class'] = typeCol
@@ -473,11 +473,11 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             plt.show()
         return [start,stop]
     def _epoch_via_EMG(self):
-        if type(self.move_epochs) != pd.DataFrame:
-            self.move_epochs, self.rest_epochs = self.reshape_epochs()
+        if type(self.task_epochs) != pd.DataFrame:
+            self.task_epochs, self.rest_epochs = self.reshape_epochs()
         output = pd.DataFrame()
         for m, ints in self.motor_onset.items():
-            df = self.move_epochs.query("movement==@m")
+            df = self.task_epochs.query("movement==@m")
             strKeys = df.columns.to_list()
             strKeys = [i for i in strKeys if type(i)==str]
             temp = df[strKeys].copy()
@@ -491,7 +491,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
 
     def _EMG_activity_epochs(self,testplots=False):
         output = {}
-        for m_type, data in self.move_epochs.items():
+        for m_type, data in self.task_epochs.items():
             if m_type.find('rest') <0:
                 epochOnsets = []
                 emg = {x:data['EMG']['EMG'][x] for x in self.muscleMapping[m_type]}
@@ -521,17 +521,17 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         return saveDir
     def _sEEG_epochPSDs(self,freqs):
         move = pd.DataFrame()
-        cols = self.move_epochs.columns
+        cols = self.task_epochs.columns
         window = sig.get_window('hann',Nx=self.fs)
         f = [i for i in range(1,301)]
         f = np.array(f)
         for col in cols :
             if type(col)==int:
-                move[col] = self.move_epochs[col].apply(lambda x:single_channel_pwelch(x,self.fs,window,f_bound=freqs))
+                move[col] = self.task_epochs[col].apply(lambda x:single_channel_pwelch(x,self.fs,window,f_bound=freqs))
             else:
-                move[col] = self.move_epochs[col]
+                move[col] = self.task_epochs[col]
         rest = pd.DataFrame()
-        cols = self.move_epochs.columns
+        cols = self.task_epochs.columns
         for col in cols :
             if type(col)==int:
                 rest[col] = self.rest_epochs[col].apply(lambda x:single_channel_pwelch(x,self.fs,window,f_bound=freqs))
@@ -1044,7 +1044,9 @@ def find_intervals(array):
     return intervals
 
 def writePickle(struct,fpath:Path,fname):
-    fname = fpath / f'{fname}.pkl'
+    if fname.find('.pkl')<-1:
+        fname = f'{fname}.pkl'
+    fname = fpath / f'{fname}'
     with open(fname,'wb') as handle:
         pickle.dump(struct,handle)
 def readPickle(fpath):

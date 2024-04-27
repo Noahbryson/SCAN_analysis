@@ -10,8 +10,8 @@ import seaborn as sns
 from sklearn import metrics
 from sklearn.cluster import KMeans
 from functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, euclidean_distance
-from stimulusPresentation import screening_session, format_Stimulus_Presentation_Session
-from ERP_struct import ERP_struct
+from stimulusPresentation import screening_session, format_Stimulus_Presentation_Session, sliceArray
+from response_datastructs import ERP_struct, spectrumResponses
 from SCAN_SingleSessionAnalysis import readPickle, writePickle, alphaSortDict
 
 class screening_analysis(screening_session):
@@ -53,24 +53,60 @@ class screening_analysis(screening_session):
         self.sensorimotor.epoch_info = self.sensorimotor.epochStimulusCode_screening(plot_states=plot_stimuli)
         self.motor.epoch_info = self.motor.epochStimulusCode_screening(plot_states=plot_stimuli)
         self.sensory.epoch_info = self.sensory.epochStimulusCode_screening(plot_states=plot_stimuli)
-        self.ERP_m_epochs = self._epochERPs(self.motor)
-        self.ERP_s_epochs = self._epochERPs(self.sensory)
-        self.ERP_sm_epochs = self._epochERPs(self.sensorimotor)
         self.motor.data = self._processSignals(self.motor,load=load,rerefSEEG=rerefSEEG)
         self.sensorimotor.data = self._processSignals(self.sensorimotor,load=load,rerefSEEG=rerefSEEG)
         self.sensory.data = self._processSignals(self.sensory,load=load,rerefSEEG=rerefSEEG)
         print('end init')  
     
     
+    def compareTaskSpectra(self,recordingType: str=''):
+        match recordingType:
+                case 'motor':
+                    data = self.motor.data
+                    task_epochs = self.motor.task_epochs
+                    rest_epochs = self.motor.rest_epochs
+                case 'sensory':
+                    data = self.sensory.data
+                    task_epochs = self.sensory.task_epochs
+                    rest_epochs = self.sensory.rest_epochs
+                case 'sm':
+                    data = self.sensorimotor.data
+                    task_epochs = self.sensorimotor.task_epochs
+                    rest_epochs = self.sensorimotor.rest_epochs
+                case _:
+                    print('please enter a valid command: [motor, sensory, sm]')
+                    a=input('enter recording type: ')
+                    self.compareTaskSpectra(a)
+        epochs = {}
+        for k,task_v in task_epochs.items(): # epoch information (task, list of intervals)
+            rest_v = rest_epochs[k]
+            task_signals = {}
+            rest_signals = {}
+            for sigType, values in data.items(): # (type of signal, dictionary of all data)
+                trajectories = {}
+                for traj, chan in values.items(): # (name of specific trajectory, recording sites on the trajectory)
+                    channel_task = {loc: [data[on:end+1] for (on, end) in task_v] for loc, data in chan.items()} # dict comprehension to build epochs from intervals on each channel on a trajectory
+                    channel_rest = {loc: [data[on:end+1] for (on, end) in rest_v] for loc, data in chan.items()} # dict comprehension to build epochs from intervals on each channel on a trajectory
+                    if sigType in task_signals:
+                        task_signals[sigType].update(channel_task) 
+                        rest_signals[sigType].update(channel_rest) 
+                    else:
+                        task_signals[sigType] = channel_task
+                        rest_signals[sigType] = channel_rest
+                epochs[k] = {'task':task_signals, 'rest':rest_signals}
+        response = spectrumResponses(epochs,self.fs)
+        breakpoint()
+        return 0
+    
     def extractERPs(self,recordingType:str,timeLag: float=2)-> dict:
-        """This function extracts ERP epochs based on the type of recording specified (motor or sensory).
+        """Extracts ERP epochs based on the type of recording specified (motor or sensory).
         
         Parameters
         ----------
         recordingType : str
             recordingType: a string indicating the type of recording for which ERPs are to be extracted. It
         can be either 'motor', 'sensory' or 'sm'.
-        timeLag : float, optional
+        timeLag : float, optional, default = 2s
             The `timeLag` parameter specifies the time lag in seconds for epoching the data. This timeLag
         is applited both before and after the epoch interval. In this function, it is set to a default 
         value of 2 seconds if not provided by the user. 
@@ -319,6 +355,7 @@ class screening_analysis(screening_session):
         return output
     def _bipolarReference(self,a,b):
         return b-a 
+    
 if __name__ == '__main__':
     import platform
     localEnv = platform.system()
@@ -330,4 +367,5 @@ if __name__ == '__main__':
     subject = 'BJH041'
     gammaRange = [70,170]
     a = screening_analysis(dataPath,subject,load=True,plot_stimuli=False,gammaRange=gammaRange,rerefSEEG='common')
+    a.compareTaskSpectra('sensory')
     a.extractERPs('sensory')

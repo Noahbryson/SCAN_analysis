@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats as st
+import scipy.signal as sig
 from functions.stat_methods import confidence_interval
 import math
 import distinctipy
@@ -81,3 +82,53 @@ def plot_range_on_curve(t,curve, bounds, ax:plt.axes,color):
       # x = np.linspace(0,len(upper),len(upper))
       ax.fill_between(t,upper,lower,color=color,alpha=0.2,label='_')
       return ax
+
+
+class spectrumResponses():
+      def __init__(self,data:dict, fs:int) -> None:
+            self.data = data
+            self.fs = fs
+            self.windowProportion = 0.5#multiply by data len during pwelch for proportion of data.
+            self._computeSpectrograms()
+            
+      def _computeSpectrograms(self):
+            output = {}
+            for k,v in self.data.items():
+                  task = v['task']['sEEG']
+                  rest = v['rest']['sEEG']
+                  task_res = {}
+                  rest_res = {}
+                  for t,r in zip(task,rest):
+                        t_temp, r_temp = [], []
+                        t_f, r_f = [], []
+                        for t_int,r_int in zip(task[t],rest[r]):
+                              window = sig.get_window('hann',Nx= int(self.windowProportion*len(t_int)))
+                              # window = sig.get_window('hann',Nx=self.fs)
+                              f,Pxx = sig.welch(t_int,fs=self.fs,window=window)
+                              t_temp.append(Pxx)
+                              t_f.append(f)
+                              
+                              window = sig.get_window('hann',Nx= int(self.windowProportion*len(r_int)))
+                              # window = sig.get_window('hann',Nx= int(self.fs))
+                              f,Pxx = sig.welch(r_int,fs=self.fs,window=window)
+                              r_temp.append(Pxx[1:])
+                              r_f.append(f[1:])
+                        task_res[t] = [t_f,t_temp]
+                        task_res[t] = [t_f,t_temp]
+                        rest_res[t] = [r_f,r_temp]
+                        rest_res[t] = [r_f,r_temp]
+                  output[k] = {'task':task_res,'rest':rest_res}
+            x = plt.figure()
+            x.suptitle(t)
+            ax = x.add_subplot(111)
+            ax.semilogx(output['pinky']['task']['ML_3'][0][0],output['pinky']['task']['ML_3'][1][0])
+            ax.semilogx(output['pinky']['rest']['ML_3'][0][0],output['pinky']['rest']['ML_3'][1][0])                             
+            plt.show()
+            breakpoint()
+            return output
+      
+      def getFFTWindow(self):
+            print('returned window is the proportion of the datalength')
+            return self.windowProportion
+      def setFFTWindow(self,windowProportion):
+            self.windowProportion = windowProportion
