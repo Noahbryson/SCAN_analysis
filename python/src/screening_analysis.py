@@ -65,14 +65,17 @@ class screening_analysis(screening_session):
                     data = self.motor.data
                     task_epochs = self.motor.task_epochs
                     rest_epochs = self.motor.rest_epochs
+                    normalizingDict = self._globalPSD_normalize(self.motor)
                 case 'sensory':
                     data = self.sensory.data
                     task_epochs = self.sensory.task_epochs
                     rest_epochs = self.sensory.rest_epochs
+                    normalizingDict = self._globalPSD_normalize(self.sensory)
                 case 'sm':
                     data = self.sensorimotor.data
                     task_epochs = self.sensorimotor.task_epochs
                     rest_epochs = self.sensorimotor.rest_epochs
+                    normalizingDict = self._globalPSD_normalize(self.sensorimotor)
                 case _:
                     print('please enter a valid command: [motor, sensory, sm]')
                     a=input('enter recording type: ')
@@ -94,9 +97,45 @@ class screening_analysis(screening_session):
                         task_signals[sigType] = channel_task
                         rest_signals[sigType] = channel_rest
                 epochs[k] = {'task':task_signals, 'rest':rest_signals}
-        response = spectrumResponses(epochs,self.fs)
-        breakpoint()
-        return 0
+        res = spectrumResponses(epochs,self.fs,normalizingDict)
+        res.clusterChannels()
+        return res 
+    def _globalPSD_normalize(self,dataObj:format_Stimulus_Presentation_Session, channel_norm:bool=True):
+        """
+        normalize brain recroding PSDs across entire session
+        ----------
+        Parameters
+        ----------
+        channel_norm: bool, default is True
+            if True, return a dict of each normalized channel
+            if False, return an dict of each channel filled with the average PSD of all channels    
+        """
+        # # numCols = [col for col in df2 if type(col) == int]
+        # # sub_df2 = df2[numCols].copy()
+        # # new_numCols = [col+10 for col in sub_df2]
+        # aggregate = pd.DataFrame()
+        # aggregate['av1'] = df1['avg']
+        # aggregate['av2'] = df2['avg']
+        # av1 = aggregate['av1'].mean()
+        # av2 = aggregate['av2'].mean()
+        # out = np.mean([av1,av2],axis=0)
+        # # aggregate[new_numCols] = sub_df2[numCols]
+        data = {}
+        for i in dataObj.data['sEEG'].values():
+            data.update(i)
+        window = window = sig.get_window('hann',Nx=self.fs)
+        keys = []
+        psds = []
+        for k,v in data.items():
+            pxx = sig.welch(v,self.fs,window)
+            psds.append(pxx)
+            keys.append(k)
+        if channel_norm:
+            out = {k:v for k,v in zip(keys,psds)}    
+        else:
+            avg = np.average(psds,axis=0)
+            out = {k:avg for k in keys}
+        return out
     
     def extractERPs(self,recordingType:str,timeLag: float=2)-> dict:
         """Extracts ERP epochs based on the type of recording specified (motor or sensory).
@@ -196,7 +235,7 @@ class screening_analysis(screening_session):
         ----------
         Returns:
             ERP_struct: class with access to type, filterband, averages and raw data for an ERP,
-            also 
+            and visualization and saving methods. 
         """
         print('starting ERP calc')
         aggregateData = {}
@@ -367,5 +406,5 @@ if __name__ == '__main__':
     subject = 'BJH041'
     gammaRange = [70,170]
     a = screening_analysis(dataPath,subject,load=True,plot_stimuli=False,gammaRange=gammaRange,rerefSEEG='common')
-    a.compareTaskSpectra('sensory')
+    a.compareTaskSpectra('sm')
     a.extractERPs('sensory')

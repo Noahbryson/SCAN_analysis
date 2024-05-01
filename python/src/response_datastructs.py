@@ -2,7 +2,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats as st
 import scipy.signal as sig
-from functions.stat_methods import confidence_interval
+from sklearn import decomposition, metrics, preprocessing
+import pandas as pd
+from functions.stat_methods import cohendsD, mannwhitneyU, signed_cross_correlation
+from functions.filters import sliceArray
 import math
 import distinctipy
 import random
@@ -85,13 +88,83 @@ def plot_range_on_curve(t,curve, bounds, ax:plt.axes,color):
 
 
 class spectrumResponses():
-      def __init__(self,data:dict, fs:int) -> None:
+      def __init__(self,data:dict, fs:int, normalizingDict:dict, filterband:list = [70,170]) -> None:
+            self.filterband = filterband
             self.data = data
             self.fs = fs
             self.windowProportion = 0.5#multiply by data len during pwelch for proportion of data.
-            self._computeSpectrograms()
-            
-      def _computeSpectrograms(self):
+            taskPSDs = self._computeSpectrograms(normalDict=normalizingDict)
+            tasks = [i for i in taskPSDs.keys()]
+            self.psdDf = self._makeDataFrame(taskPSDs)
+            self.taskRes = self.getTaskResults(self.psdDf,tasks)
+
+
+      def _makeDataFrame(self,taskPSDs:dict):
+            columns = ['taskType','TaskActive','Channel','f','PSD','normPSD','trial']
+            res = []
+            for k,v in taskPSDs.items():
+                  taskData = v['task']
+                  restData = v['rest']
+                  for t,r in zip(v['task'],v['rest']):
+                              for trial,(f,p,pn) in enumerate(zip(taskData[t][0],taskData[t][1],taskData[t][2])):
+                                    res.append([k,True,t,f,p,pn,trial+1])
+                              for trial,(f,p,pn) in enumerate(zip(restData[r][0],restData[r][1],restData[r][2])):
+                                    res.append([k,False,r,f,p,pn,trial+1])
+            df = pd.DataFrame(res,columns=columns)
+            df['gamma'] =      df.apply(lambda x: np.mean(sliceArray(x['PSD'],self.filterband)),axis=1)
+            df['norm_gamma'] = df.apply(lambda x: np.mean(sliceArray(x['normPSD'],self.filterband)),axis=1)
+            return df
+
+      def getTaskResults(self,taskDf:pd.DataFrame, tasks):
+            channels = set(taskDf['Channel'].to_list())
+            output = []
+            columns = ['channel','task','rsq','d','U','p']
+            for c in channels:
+                  for task in tasks:
+                        task_on  = taskDf.loc[(taskDf['taskType']==task) & (taskDf['TaskActive']==True) & (taskDf['Channel']==c)]
+                        task_off  = taskDf.loc[(taskDf['taskType']==task) & (taskDf['TaskActive']==False) & (taskDf['Channel']==c)]
+                        m=task_on['norm_gamma'].to_numpy()
+                        r=task_off['norm_gamma'].to_numpy()
+                        r_sq = signed_cross_correlation(m=m,r=r,num_r=len(r),num_m=len(m)) 
+                        d = cohendsD(m,r)
+                        res = mannwhitneyU(m,r)
+                        output.append([c,task,r_sq,d,res.statistic,res.pvalue])
+            df=pd.DataFrame(output,columns=columns)
+            return df
+
+      def getSignificantChannels(self):
+            # channels = self.taskRes.loc[self.taskRes['p']<0.05]['channel'].to_list()
+            channels = self.taskRes['channel'].to_list()
+            channels = set(channels)
+            temp = self.taskRes.loc[self.taskRes['channel'].isin(channels)]
+            out_r, out_d = {},{}
+            for c in channels:
+                  data = temp.loc[temp['channel']==c]
+                  data_r = {k:v for k,v in zip(data['task'],data['rsq'].to_numpy())}
+                  data_d = {k:v for k,v in zip(data['task'],data['rsq'].to_numpy())}
+                  out_d[c] =data_d
+                  out_r[c] =data_r
+            dfrsq = pd.DataFrame.from_dict(out_r,orient='index')
+            dfd = pd.DataFrame.from_dict(out_d,orient='index')
+            return dfd, dfrsq
+
+      def clusterChannels(self):
+            dfd, dfrsq = self.getSignificantChannels()
+            dfd[dfd.columns] = preprocessing.StandardScaler().fit_transform(dfd)
+            n_comps = 3
+            pca = decomposition.PCA(n_components=n_comps)
+            pca_res = pca.fit_transform(dfd)
+            pcaDf = pd.DataFrame(abs(pca.components_),columns=dfd.columns,index=[f'PC{i+1}' for i in range(n_comps)])
+            ax = plt.figure().add_subplot(1,1,1,projection='3d')
+            for r in pca_res:
+                  ax.scatter(r[0],r[1],color=(0,0,0),alpha=0.4)
+            plt.show()
+            return 0
+
+
+
+
+      def _computeSpectrograms(self,normalDict):
             output = {}
             for k,v in self.data.items():
                   task = v['task']['sEEG']
@@ -100,31 +173,33 @@ class spectrumResponses():
                   rest_res = {}
                   for t,r in zip(task,rest):
                         t_temp, r_temp = [], []
+                        t_norm, r_norm = [], []
                         t_f, r_f = [], []
                         for t_int,r_int in zip(task[t],rest[r]):
-                              window = sig.get_window('hann',Nx= int(self.windowProportion*len(t_int)))
-                              # window = sig.get_window('hann',Nx=self.fs)
+                              # window = sig.get_window('hann',Nx= int(self.windowProportion*len(t_int)))
+                              window = sig.get_window('hann',Nx=self.fs)
                               f,Pxx = sig.welch(t_int,fs=self.fs,window=window)
                               t_temp.append(Pxx)
+                              t_norm.append(Pxx / normalDict[t][-1])
                               t_f.append(f)
                               
-                              window = sig.get_window('hann',Nx= int(self.windowProportion*len(r_int)))
-                              # window = sig.get_window('hann',Nx= int(self.fs))
+                              # window = sig.get_window('hann',Nx= int(self.windowProportion*len(r_int)))
+                              window = sig.get_window('hann',Nx= int(self.fs))
                               f,Pxx = sig.welch(r_int,fs=self.fs,window=window)
-                              r_temp.append(Pxx[1:])
-                              r_f.append(f[1:])
-                        task_res[t] = [t_f,t_temp]
-                        task_res[t] = [t_f,t_temp]
-                        rest_res[t] = [r_f,r_temp]
-                        rest_res[t] = [r_f,r_temp]
+                              r_temp.append(Pxx)
+                              r_norm.append(Pxx / normalDict[t][-1])
+                              r_f.append(f)
+                        task_res[t] = [t_f,t_temp,t_norm]
+                        rest_res[t] = [r_f,r_temp,r_norm]
+                        
                   output[k] = {'task':task_res,'rest':rest_res}
-            x = plt.figure()
-            x.suptitle(t)
-            ax = x.add_subplot(111)
-            ax.semilogx(output['pinky']['task']['ML_3'][0][0],output['pinky']['task']['ML_3'][1][0])
-            ax.semilogx(output['pinky']['rest']['ML_3'][0][0],output['pinky']['rest']['ML_3'][1][0])                             
-            plt.show()
-            breakpoint()
+            # x = plt.figure()
+            # x.suptitle('IL_3')
+            # ax = x.add_subplot(111)
+            # ax.semilogx(output['pinky']['task']['IL_3'][0][0],output['pinky']['task']['IL_3'][2][0])
+            # ax.semilogx(output['pinky']['rest']['IL_3'][0][0],output['pinky']['rest']['IL_3'][2][0],c=(0,1,0))                             
+            # plt.close()
+            # breakpoint()
             return output
       
       def getFFTWindow(self):

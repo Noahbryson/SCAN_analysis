@@ -64,6 +64,20 @@ def cohendsD(a, b):
         stdPooled = np.sqrt((std1**2+std2**2)/2)
         return (m1-m2)/stdPooled
 
+def signed_cross_correlation(m:float or np.ndarray,r:float or np.ndarray,num_r=10,num_m=10): # type: ignore
+    """
+    
+    """
+    # rsq = metrics.r2_score(m,r)
+    N = (num_r*num_m)/((num_r+num_m)**2)
+    m_in = np.mean(m)
+    r_in = np.mean(r)
+    variance = np.var([m,r])
+    res = (m_in - r_in)**3 / (abs(m_in-r_in)*variance) * N
+    return res
+
+
+
 # TODO: Implement the other statistical measures in stats module for use here. 
 def calc_ROC(a,b,plot=False):
     from sklearn.metrics import roc_curve,roc_auc_score

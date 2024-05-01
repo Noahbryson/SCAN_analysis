@@ -9,7 +9,7 @@ import pickle
 import seaborn as sns
 from sklearn import metrics
 from sklearn.cluster import KMeans
-from functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, euclidean_distance
+from functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, euclidean_distance, signed_cross_correlation
 from stimulusPresentation import format_Stimulus_Presentation_Session
 from response_datastructs import ERP_struct
 
@@ -661,7 +661,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                 m = m_m.loc[chan,'normalized']
                 r = r_m.loc[chan,'normalized']
                 s = s_m.loc[chan,'avg_std']
-                r_sq = signed_cross_correlation(m,r,s)
+                r_sq = signed_cross_correlation(m,r)
                 temp[chan] = r_sq
             out = {i:temp[i] for i in temp.keys() if i.find('REF')<0}
             res[i] = out
@@ -684,7 +684,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             roc_temp = {}
             p_temp = {}
             for chan in channels:
-                if chan.find('REF_1_2')<0:
+                if chan.find('REF')<0:
                     m = m_m.loc[chan,epochCols].to_numpy()
                     m_avg = epoch_powerAverage(m,frequency_slice)
                     r = r_m.loc[chan,epochCols].to_numpy()
@@ -972,17 +972,7 @@ def epoch_powerAverage(a,f_slice = [0]):
 def parseDictViaKeys(data,keys):
     res = {k:data[k] for k in keys}
     return res
-def signed_cross_correlation(m:float or np.ndarray,r:float or np.ndarray,stdev:float or np.ndarray,num_r=10,num_m=10): # type: ignore
-    """
-    
-    """
-    rsq = metrics.r2_score(m,r)
-    N = (num_r*num_m)/((num_r+num_m)**2)
-    m_in = np.mean(m)
-    r_in = np.mean(r)
-    variance = np.var([m,r])
-    res = (m_in - r_in)**3 / (abs(m_in-r_in)*variance) * N
-    return res
+
 def single_channel_pwelch(array:np.ndarray,fs:int,window:np.ndarray,overlap=0.5,test=False,f_bound:list = [1,301]):
     """
     function to pass to a dataframe as a lambda function to perform columnwise PSDs on epoched data 

@@ -166,3 +166,6 @@ def moving_average_np(data, window_size):
 def moving_average_scipy(data, window):
     from scipy.ndimage import uniform_filter1d
     return uniform_filter1d(data, window, mode='constant', origin=-(window//2))[:-(window-1)]
+
+def sliceArray(array, interval):
+    return array[interval[0]:interval[1]]
