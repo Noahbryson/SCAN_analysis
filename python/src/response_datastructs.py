@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats as st
 import scipy.signal as sig
-from sklearn import decomposition, metrics, preprocessing
+from sklearn import decomposition, metrics, cluster,preprocessing
 import pandas as pd
 from functions.stat_methods import cohendsD, mannwhitneyU, signed_cross_correlation
 from functions.filters import sliceArray
@@ -10,6 +10,7 @@ import math
 import distinctipy
 import random
 from typing import List
+import random
 
 
 class ERP_struct():
@@ -132,36 +133,158 @@ class spectrumResponses():
             df=pd.DataFrame(output,columns=columns)
             return df
 
-      def getSignificantChannels(self):
-            # channels = self.taskRes.loc[self.taskRes['p']<0.05]['channel'].to_list()
-            channels = self.taskRes['channel'].to_list()
+      def getChannelOutcomes(self,significant: bool=False, alpha = 0.05):
+            '''This function retrieves channel outcomes based on significance level and alpha value,
+            organizing the results into DataFrames for d and rsq values.
+            
+            Parameters
+            ----------
+            significant : bool, optional
+                  The `significant` parameter is a boolean flag that determines whether to filter the results
+            based on statistical significance. If `significant` is set to True, the function will only
+            consider channels with a p-value less than or equal to the specified alpha level. If
+            `significant` is set to False, all
+            alpha
+                  The `alpha` parameter in the `getChannelOutcomes` function represents the significance level
+            used for hypothesis testing. It is typically set to a value between 0 and 1, such as 0.05, to
+            determine the threshold for statistical significance. 
+            
+            Returns
+            -------
+                  The function `getChannelOutcomes` returns two DataFrames, `dfd` and `dfrsq`, which contain
+            the outcomes for each channel in terms of 'd' and 'rsq' values respectively.
+            
+            '''
+            if significant:
+                  channels = self.taskRes.loc[self.taskRes['p']<= alpha]['channel'].to_list()
+            else:
+                  channels = self.taskRes['channel'].to_list()
             channels = set(channels)
             temp = self.taskRes.loc[self.taskRes['channel'].isin(channels)]
             out_r, out_d = {},{}
             for c in channels:
                   data = temp.loc[temp['channel']==c]
                   data_r = {k:v for k,v in zip(data['task'],data['rsq'].to_numpy())}
-                  data_d = {k:v for k,v in zip(data['task'],data['rsq'].to_numpy())}
+                  data_d = {k:v for k,v in zip(data['task'],data['d'].to_numpy())}
                   out_d[c] =data_d
                   out_r[c] =data_r
             dfrsq = pd.DataFrame.from_dict(out_r,orient='index')
             dfd = pd.DataFrame.from_dict(out_d,orient='index')
             return dfd, dfrsq
 
-      def clusterChannels(self):
-            dfd, dfrsq = self.getSignificantChannels()
+      def evaluateClustering(self,data,clusterList:list,randomseed: int,title='PCA'):
+            randomseed = random.seed(randomseed)
+            plotData = data.T            
+            for cluster in clusterList:
+                  colors = distinctipy.get_colors(cluster,rng=randomseed)
+                  fig, (ax1,ax2)=plt.subplots(1,2, num = f'{title} \nnum clusters={cluster}')
+                  fig.suptitle(title)
+                  ax1.set_ylim([0,len(data)+(cluster+1)*10])
+                  ax1.set_xlim([-0.2,1])
+                  classif = self.kmeans_cluster(data,cluster)
+                  labels=classif.fit_predict(data)
+                  silhouette_score = metrics.silhouette_score(data,labels)
+                  silhouette_score_samples = metrics.silhouette_samples(data,labels)
+                  y_lower = 10
+                  for i in range(cluster):
+                        local_cluster_vals = silhouette_score_samples[labels==i]
+                        local_cluster_vals.sort()
+                        size_cluster_i = local_cluster_vals.shape[0]
+                        y_upper = y_lower + size_cluster_i
+                        ax1.fill_betweenx(np.arange(y_lower,y_upper),0,local_cluster_vals,facecolor=colors[i],edgecolor=colors[i],alpha=0.7)
+                        
+                        ax1.text(-0.05, y_lower + 0.5 * size_cluster_i, str(i))
+
+                        # Compute the new y_lower for next plot
+                        y_lower = y_upper + 10  # 10 for the 0 samples
+                        cmap = getColorMatrix(colors,classif.labels_)
+                        ax2.scatter(plotData[0],plotData[1],color=cmap)
+                  ax1.set_title("The silhouette plot for the various clusters.")
+                  ax1.set_xlabel("The silhouette coefficient values")
+                  ax1.set_ylabel("Cluster label")
+
+                  # The vertical line for average silhouette score of all the values
+                  ax1.axvline(x=silhouette_score, color="red", linestyle="--")
+
+                  ax1.set_yticks([])  # Clear the yaxis labels / ticks
+                  # ax1.set_xticks([-0.1, 0, 0.2, 0.4, 0.6, 0.8, 1])
+                  
+      def clusterChannels(self,significant: bool=False, alpha = 0.05):
+            '''This function performs clustering on channel outcomes using PCA and KernelPCA, and visualizes
+            the results in a plot.
+            
+            Parameters
+            ----------
+            significant : bool, optional
+                  The `significant` parameter in the `clusterChannels` method is a boolean parameter with a
+            default value of `False`. It is used to determine whether to consider only significant
+            outcomes when clustering the channels.
+            alpha
+                  The `alpha` parameter in the `clusterChannels` method is a significance level used for
+            hypothesis testing. It is typically set to a value between 0 and 1, representing the
+            probability of rejecting the null hypothesis when it is actually true. 
+            
+            Returns
+            -------
+                  the value 0.
+            
+            '''
+            randomseed = random.seed(35)
+            dfd, dfrsq = self.getChannelOutcomes(significant,alpha)
             dfd[dfd.columns] = preprocessing.StandardScaler().fit_transform(dfd)
-            n_comps = 3
-            pca = decomposition.PCA(n_components=n_comps)
+            n_comps = 2
+            
+            pca = decomposition.PCA(n_components=n_comps,random_state=randomseed)
+            kspca = decomposition.KernelPCA(n_components=n_comps,kernel='sigmoid',random_state=randomseed)
+            kppca = decomposition.KernelPCA(n_components=n_comps,kernel='rbf',random_state=randomseed)
+            # TODO: check variance explained in each PC
             pca_res = pca.fit_transform(dfd)
+            kspca_res = kspca.fit_transform(dfd)
+            kppca_res = kppca.fit_transform(dfd)
             pcaDf = pd.DataFrame(abs(pca.components_),columns=dfd.columns,index=[f'PC{i+1}' for i in range(n_comps)])
-            ax = plt.figure().add_subplot(1,1,1,projection='3d')
-            for r in pca_res:
-                  ax.scatter(r[0],r[1],color=(0,0,0),alpha=0.4)
+            self.evaluateClustering(kspca_res,[2,3,4,5,6],randomseed , title='sigmoid kernel PCA')
+            self.evaluateClustering(pca_res,  [2,3,4,5,6],randomseed, title='linear PCA')
+            self.evaluateClustering(kppca_res,[2,3,4,5,6],randomseed  , title='RBF kernel PCA')
+            
+            n_clusters = 5
+            res_colors = distinctipy.get_colors(n_clusters,rng=random.seed(35))
+            cluster_res = self.kmeans_cluster(pca_res,num_clusters=n_clusters)
+            cmap = getColorMatrix(res_colors,cluster_res.labels_)
+            kcluster_res = self.kmeans_cluster(kspca_res,num_clusters=n_clusters)
+            kcmap = getColorMatrix(res_colors,kcluster_res.labels_)
+            
+            
+            """ Result Plotting"""
+            fig = plt.figure()
+            r,k = pca_res.T, kspca_res.T
+            if n_comps < 3:
+                  ax = fig.add_subplot(1,2,1 )
+                  ax2 = fig.add_subplot(1,2,2)
+                  ax. scatter(r[0],r[1],c=cmap,alpha=0.4)
+                  ax2.scatter(k[0],k[1],c=kcmap,alpha=0.4)
+            
+            else:     
+                  ax = fig.add_subplot(1,2,1,projection='3d')
+                  ax2 = fig.add_subplot(1,2,2,projection='3d')
+                  axLine = np.linspace(-1,1,10)
+                  offAx = np.linspace(0,0,10)
+                  ax.plot(xs=axLine,ys=offAx, zs=offAx, c=(0,0,0))
+                  ax.plot(xs=offAx, ys=axLine,zs=offAx, c=(0,0,0))
+                  ax.plot(xs=offAx, ys=offAx, zs=axLine, c=(0,0,0))
+                  
+                  ax2.plot(xs=axLine,ys=offAx, zs=offAx, c=(0,0,0))
+                  ax2.plot(xs=offAx, ys=axLine,zs=offAx, c=(0,0,0))
+                  ax2.plot(xs=offAx, ys=offAx, zs=axLine, c=(0,0,0))
+                  ax. scatter(r[0],r[1],r[-1],c=cmap,alpha=0.4)
+                  ax2.scatter(k[0],k[1],k[-1],c=kcmap,alpha=0.4)
             plt.show()
             return 0
 
-
+      def kmeans_cluster(self,data:np.ndarray,num_clusters:int)->cluster.KMeans:
+            classif = cluster.KMeans(n_clusters=num_clusters,random_state=0, n_init='auto')
+            classif.fit(data)
+            return classif
+            
 
 
       def _computeSpectrograms(self,normalDict):
@@ -207,3 +330,7 @@ class spectrumResponses():
             return self.windowProportion
       def setFFTWindow(self,windowProportion):
             self.windowProportion = windowProportion
+            
+def getColorMatrix(colors, IndexVector):
+      IndexVector = IndexVector - min(IndexVector) #make sure is 0 indexed. 
+      return [colors[j] for j in IndexVector]
