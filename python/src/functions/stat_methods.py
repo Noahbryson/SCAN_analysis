@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.stats as stats
+from sklearn.neighbors import KernelDensity
 
 def calc_rmse(a,b):
     N = len(a)
@@ -7,9 +8,72 @@ def calc_rmse(a,b):
     return rmse
 
 
-def euclidean_distance(data:np.ndarray | list):
-    return np.sqrt(np.sum(np.square(data)))
+def euclidean_distance(p,q):
+    """euclidean_distance _summary_
 
+    Args:
+        p ndarray: a point in 2D or 3D space
+        q ndarray: a point in 2D or 3D space
+
+    Returns:
+        dist : euclidean distance between p and q
+    """
+    assert np.shape(p) == np.shape(q), "arrays must be equal length"
+    sumSquare = np.sum([(i-j)**2 for i,j in zip(p,q)])
+    return np.sqrt(sumSquare)
+
+def kde(data):
+    data = np.array(data)
+    data = data.reshape(len(data),1)
+    return KernelDensity(kernel='gaussian').fit(data)
+
+
+def geometric_mean(pointset):
+    sqrs = np.square(pointset)
+    root_order = (1.0/np.shape(sqrs)[-1])
+    return (np.sum(sqrs,axis=-1))**(root_order)
+
+def xy_angle(x,y):
+    """calculates positive angle from x-axis in x-y plane in degrees (0-360)
+    Args:
+        x (float): x-coordinate
+        y (float): y-coordinate
+    Returns:
+        ang(float): positive angle from x-axis in x-y plane in degrees (0-360)
+    """
+    ang = np.arctan2(y,x) * 180 /np.pi
+    if ang < 0:
+        ang = 360 + ang
+    return ang
+def xz_angle(x,z):
+    """returns the vertical angle in degrees of a point in the x-z plane. Negative if z < 0, positive otherwise.
+
+    Args:
+        x (float): x-coordinate
+        z (float): z-coordinate
+
+    Returns:
+        vertical angle in degrees from x-axis in x-z plane
+    """
+    x=abs(x)
+    return np.arctan(x/z) * 180 /np.pi
+
+def distanceFromPositiveAngle(angle,target):
+    if angle >=0:
+        distance = abs(angle - target)
+    else:
+        distance = abs(angle + target)
+    return distance
+
+def angle_distances_3D(angles, targets:list):
+    horiz = distanceFromPositiveAngle(angles[0],targets[0])
+    vert = distanceFromPositiveAngle(angles[1],targets[1])
+    return [horiz,vert]
+def angle_3D(point):
+    x = point[0]; y=point[1]; z = point[2]
+    horiz = xy_angle(x,y)
+    vert = xz_angle(x,z)
+    return [horiz,vert]    
 
 def calc_rSquared(a,b):
     RSS = np.sum((a-b)**2)

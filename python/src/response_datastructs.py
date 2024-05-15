@@ -58,7 +58,8 @@ class ERP_struct():
                   
                   data = [self.data[x] for x in v]
                   title = f'{subject} {k}, {self.method}, {self.filterband} Hz ERPs'
-                  fig, axs = plt.subplots(plotShape[0],plotShape[1],num = title,sharex=True,sharey=True)
+                  figname = f'{subject}_{k}_{self.method}_{self.filterband}_Hz_ERPs'
+                  fig, axs = plt.subplots(plotShape[0],plotShape[1],num =figname,sharex=True,sharey=True,figsize=(20,15))
                   for i,(vals,ax) in enumerate(zip(data,fig.axes)):
                         keys = list(vals.keys())
                         
@@ -78,7 +79,7 @@ class ERP_struct():
                               fig.delaxes(a)
                         else:
                               a.set_xlabel('time (s)')
-                  figs.append(fig)
+                  figs.append(figname)
             return figs
 def plot_range_on_curve(t,curve, bounds, ax:plt.axes,color):
       upper = np.add(curve,bounds)
