@@ -836,12 +836,15 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
 
     def cluster_optimization(self,metric,effectLabel,dataSubset:list=[],show: bool=False,save:bool=False,close:bool=True):
         import random
-        colors = distinctipy.get_colors(6,rng=random.seed(0),pastel_factor=0)
         data = self.reshapeEffect(metric)
         label = f'{self.subject}_{effectLabel}'
         if len(dataSubset) > 0:
             # print('parsing via keys')
             data = parseDictViaKeys(data=data,keys=dataSubset)
+            tag = 'significant'
+        else:
+            tag = 'all'
+        colors = distinctipy.get_colors(6,rng=random.seed(0),pastel_factor=0)
         n_samp = len(data)
         num_clusters = range(2,n_samp)
         clusters = []
@@ -852,7 +855,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             silhouette_score_samples = metrics.silhouette_samples(xyz,labels)
             clusters.append({'num':j,'score':silhouette_score,'score_samples':silhouette_score_samples,'clf':classifier})
             # print(i)
-        fig = plt.figure(figsize=(20,20))
+        fig = plt.figure(figsize=(20,20),num='cluster optimization')
         row = 1; col =1
         ax = fig.add_subplot(row, col, 1, projection='3d')
         ax.view_init(elev=15, azim=200, roll=0)
@@ -877,30 +880,76 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             for j,c in zip(labelIds,centers):
                 targetLabels = np.where(labels == j, labels,-1)
                 distances[j] = [euclidean_distance(c,q) for q,p in zip(xyz,targetLabels) if p > -1]
-                kernel = stats.gaussian_kde(distances[j])
-                kernel_x = np.linspace(min(distances[j]),max(distances[j]),1000)
-                density = kernel(kernel_x)
+                if len(distances[j]) > 1:
+                    kernel = stats.gaussian_kde(distances[j])
+                    kernel_x = np.linspace(min(distances[j]),max(distances[j]),1000)
+                    density = kernel(kernel_x)
                 # density = density/np.trapz(density,x=kernel_x)
-                y = np.linspace(0,0,1000)
+                    y = np.linspace(0,0,1000)
                 # ax.plot(xs=kernel_x+c[0]+offset,zs=y-.2,ys=-.3*density,color=colors[i])
-                filled = plt.fill_between(kernel_x + offset+c[0]*.5,-.3*density, 0, color=colors[j], alpha=0.1)
-                ax.add_collection3d(filled, zs=-.2, zdir='z')
-                ax.scatter(xs=c[0]+offset,ys=c[1],zs=c[2],color=adjust_color((0,0,0),0.7),marker='*',s=100,alpha=1)
+                    filled = plt.fill_between(kernel_x + offset+c[0]*.5,-.3*density, 0, color=colors[j], alpha=0.1)
+                    ax.add_collection3d(filled, zs=-.2, zdir='z')
+                    ax.scatter(xs=c[0]+offset,ys=c[1],zs=c[2],color=adjust_color((0,0,0),0.7),marker='*',s=100,alpha=1)
+                else:
+                    ax.scatter(xs=c[0]+offset,ys=c[1],zs=c[2],color=adjust_color(colors[j],0.7),marker='*',s=100,alpha=1)
                 if i == 0 == j:
                     ax.plot(offAx+offset-.1,np.linspace(0,-.15*max(density),10),offAx-.2,c=(0,0,0))
-                    ax.text(x=offset-0.2 ,y= -.075*max(density), z=-.3,s=f'{round(0.5*max(density),2)} density' )
+                    # ax.text(x=offset-0.2 ,y= -.075*max(density), z=-.3,s=f'{round(0.5*max(density),2)} density' )
                 # sns.kdeplot(distances[i]+offset,ax=ax,color=colors[i])
             
                 
             # ax.plot(xs=offAx+spacing[i], ys=xLine,zs=offAx, c=(0,0,0))
             # ax.plot(xs=offAx+spacing[i], ys=offAx, zs=xLine, c=(0,0,0))
             ax.scatter(xs=xyz[:,0]+offset,ys=xyz[:,1],zs=xyz[:,2],c=cmap,alpha=0.7)
+        ax.set_title(f'{round(0.5*max(density),2)} density scale bar' )
         ax.set_ylim([-thresh,thresh*15])  
         ax.set_zlim([-thresh,thresh*15])  
         ax.set_xlim([-thresh,thresh*15])  
-        plt.show()
-        return 0 
+        clusterRes = [[j['num'],j['score']] for j in clusters]
+        clusterRes = pd.DataFrame(clusterRes,columns=['num','silhouette score'])
+        saveDir = self._validateDir('clustering_validation')
+        clusterRes.to_csv(saveDir/f'{effectLabel}_{tag}_clustering_scores.csv')
+        if close:
+            plt.close(fig)
+        return clusterRes
 
+    def cluster_permutation(self,metric,effectLabel,single_scores: pd.DataFrame,dataSubset:list=[],num_perm:int = 1000):
+        data = self.reshapeEffect(metric)
+        label = f'{self.subject}_{effectLabel}'
+        if len(dataSubset) > 0:
+            # print('parsing via keys')
+            data = parseDictViaKeys(data=data,keys=dataSubset)
+            tag = 'significant'
+        else:
+            tag = 'all'
+        num_clusters = []
+        score_vals =single_scores['silhouette score'].to_list()
+        score_num =single_scores['num'].to_list()
+        
+        # for i in range(5):
+        #     loc = np.argmax(score_vals)
+        #     cluster_num = score_idx.pop(loc)
+        #     score_vals.pop(loc)
+        num_clusters = sorted([score_num[i] for i in np.argsort(score_vals)[-5:]],reverse=True)
+        clusters = {}
+        for j in num_clusters:
+            temp = np.zeros([num_perm,1])
+            for p in range(num_perm):
+                classifier,xyz = self.kmeans_cluster(data,j,True,seed=p)
+                labels=classifier.fit_predict(xyz)
+                temp[p] = metrics.silhouette_score(xyz,labels)
+            clusters[j] = temp
+        avgs = [[i,np.mean(j),np.std(j)] for i,j in clusters.items()]
+        avgs = pd.DataFrame(avgs,columns=['cluster_num','avg','std'])
+                # silhouette_score_samples = metrics.silhouette_samples(xyz,labels)
+                # clusters.append({'num':j,'score':silhouette_score,'score_samples':silhouette_score_samples,'clf':classifier})
+            # print(i)
+        
+        avgs.to_csv(self._validateDir('clustering_validation') / f'{effectLabel}_{tag}_cluster_permutation.csv')
+        return avgs
+        
+    
+    
     def runEffectClusters(self, effectDict, dataSubset:list=[],title='',for_subplot:bool=False, ax: bool or plt.axes=False,  # type: ignore
                           clusterFlag:bool= False, num_clusters=5,exportFlag:bool=False,effectLabel:str=''):
         """plot effect sizes for the 3 movements as 3D scatter plot. 
@@ -992,10 +1041,14 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             ax.scatter(xs=h,ys=f,zs=t,s = size,color=c,label=lab)
         threshDict = {k[0]:k[1:] for k in targetClusterMetrics}
         if clusterFlag and exportFlag:
-            filename = f'{self.subject}_{self.sessionID}_{title}_{effectLabel}_cluster_result.mat'
-            self._validateDir(self.saveRoot)
+            channel_labels = {i:j for i,j in zip(data.keys(),cluster_labs)}
+            filename = f'{self.subject}_{self.sessionID}_{title}_{effectLabel}_{num_clusters}_SCANcluster.mat'
+            savedir = self._validateDir('clustering_result')
             output = {'clusterRes':threshDict}
-            scio.savemat(self.saveRoot/filename,mdict=output,format='5')
+            scio.savemat(savedir/filename,mdict=output,format='5')
+            filename = f'{self.subject}_{self.sessionID}_{title}_{effectLabel}_{num_clusters}_clustered_channel_labels.mat'
+            scio.savemat(savedir/filename,mdict=channel_labels,format='5')
+            
         # ax.scatter(xs=xyz[:,0],ys=xyz[:,1],zs=xyz[:,2])
         axLine = np.linspace(-np.max(abs(xyz.flatten()),axis=-1)*2,np.max(abs(xyz.flatten()),axis=-1)*2,10)
         offAx = np.linspace(0,0,10)
@@ -1024,10 +1077,12 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         if horiz == vert == max_dist:
             return max_dist
         elif horiz==vert or vert==max_dist or horiz == max_dist:
-            if horiz==vert and distances[horiz] >= 0.2*distances[max_dist]:
+            if horiz==vert and distances[horiz] >= 0.35*distances[max_dist]:
                 return horiz
             elif distances[horiz] >= 0.5*distances[max_dist]:
                 return horiz
+            elif distances[vert] >= 0.5*distances[max_dist]:
+                return vert
             else:
                 dist = np.delete(distances,horiz)
                 h = np.delete(angle_h,max_dist)
@@ -1043,7 +1098,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             return self._sort_clusters(dist,ang)
         
     
-    def kmeans_cluster(self,data:dict,num_clusters:int,forOptimization: bool=False):
+    def kmeans_cluster(self,data:dict,num_clusters:int,forOptimization: bool=False,seed:int=0):
         channels = data.keys()
         n_samp = len(data)
         xyz = np.empty([n_samp,3])
@@ -1055,7 +1110,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             xyz[i] = np.array([h,f,t])
 
 
-        cluster = KMeans(n_clusters=num_clusters,random_state=0, n_init='auto')
+        cluster = KMeans(n_clusters=num_clusters,random_state=seed, n_init='auto')
         cluster.fit(xyz)
         labels = cluster.labels_
         cluters_accessed = len(np.unique(labels))        
@@ -1176,6 +1231,9 @@ def readPickle(fpath):
         out = pickle.load(handle)
     return out
 
+def sliceDict(dictionary,keys2Slice):
+    return {k:dictionary[k] for k in keys2Slice}
+
 def extractInterval(intervals,b):
     for i in intervals:
         if i[0] ==b: 
@@ -1200,7 +1258,7 @@ if __name__ == '__main__':
         dataPath = userPath/"Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo"
     subject = 'BJH041'
     session = 'pre_ablation'
-    session = 'post_ablation'
+    # session = 'post_ablation'
     # session = 'aggregate'
     gammaRange = [70,170]
     a = SCAN_SingleSessionAnalysis(dataPath,subject,session,load=True,plot_stimuli=False,gammaRange=gammaRange,refType='common')
@@ -1211,20 +1269,20 @@ if __name__ == '__main__':
     r_sq, p_vals, U_res, d_res,roc_res = a.taskPowerCorrelation_analysis(saveMAT=False)
     sig_chans, nonsig_chans = a.returnSignificantLocations(p_vals,alpha=0.05)
     # x = a.cluster_optimization(r_sq,'r_sq',dataSubset=sig_chans)
-    x = a.cluster_optimization(r_sq,'r_sq',dataSubset=[])
+    effect_of_interest = r_sq
+    effect_name = 'r_sq'
+    datasubset = []
+    # cluster_res = a.cluster_optimization(effect_of_interest,effect_name,dataSubset=datasubset,close=False)
+    # a.cluster_permutation(effect_of_interest,effect_name,dataSubset=datasubset, single_scores=cluster_res)
     fig = plt.figure(figsize=(20,8))
-    row = 1; col =3
+    row = 1; col =2
     ax = fig.add_subplot(row, col, 1, projection='3d')
     ax.view_init(elev=30, azim=105, roll=0)
-    effect_of_interest = r_sq
-    a.runEffectClusters(d_res,title='cohen',clusterFlag=True,num_clusters=5,dataSubset=sig_chans,ax=ax,for_subplot=True, effectLabel='(d)')
+    a.runEffectClusters(effect_of_interest,title=effect_name,dataSubset=datasubset,clusterFlag=True, num_clusters=3,ax=ax,for_subplot=True,effectLabel='(r^2)',exportFlag=True)
     ax2 = fig.add_subplot(row, col, 2, projection='3d')
     ax2.view_init(elev=30, azim=105, roll=0)
-    a.runEffectClusters(effect_of_interest,title='r squared',dataSubset=sig_chans,clusterFlag=True, num_clusters=5,ax=ax2,for_subplot=True,effectLabel='(r^2)',exportFlag=True)
+    a.runEffectClusters(effect_of_interest,title=effect_name,dataSubset=datasubset,clusterFlag=True, num_clusters=5,ax=ax2,for_subplot=True,effectLabel='(r^2)',exportFlag=True)
     # sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
-    ax3 = fig.add_subplot(row, col, 3, projection='3d')
-    ax3.view_init(elev=30, azim=105, roll=0)
-    a.runEffectClusters(roc_res,title='r squared',dataSubset=sig_chans,clusterFlag=True, num_clusters=5,ax=ax3,for_subplot=True,effectLabel='(AUC)',exportFlag=True)
     # sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
     # a.scatterMetrics(sig_r,sig_d,sig_roc,sig_U) # significant Channels
     # a.visualizeMetrics(r_sq, d_res,roc_res,U_res,numBins=40) # all channels
