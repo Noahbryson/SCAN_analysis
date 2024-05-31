@@ -23,13 +23,16 @@ class ERP_struct():
             else:
                   self.method = 'voltage'
                   self.unit = 'uV'
-            datK = list(data.keys()) # get keys for dynamic grabbing of channel names.
+            datK = list(data.keys()) # get keys for dynamic grabbing of task names.
             self.cs = distinctipy.get_colors(len(datK),pastel_factor=0.5,rng=random.seed(35)) #generate random colors with same seed.
             self.trajectories = set([i[0:2] for i in data[datK[0]][0].keys()])
             channels = [i for i in data[datK[0]][0].keys()]
             self.mapping = {}
             for i in self.trajectories:
-                  self.mapping[i] = [j for j in channels if j.find(i)>=0]
+                  temp = [j for j in channels if j.find(i)>=0]
+                  if i == 'EM':
+                        temp.sort()
+                  self.mapping[i] = temp
             self.num_traj = len(self.trajectories)
             self.data,self.datalabels= self._reshape_data(data,channels)            
       
@@ -48,7 +51,7 @@ class ERP_struct():
             return output, labels
       
       
-      def plotAverages_per_trajectory(self,subject,timeLag:float=0.5)->List[plt.Figure]:
+      def plotAverages_per_trajectory(self,subject,timeLag:float=1)->List[plt.Figure]:
             figs = []
             for k,v in self.mapping.items():
                   numChan = len(v)
@@ -65,13 +68,17 @@ class ERP_struct():
                         
                         t = np.linspace(-timeLag,len(vals[keys[0]][0])/self.fs-timeLag,len(vals[keys[0]][0]))                        
                         # a.set_visible(True)
-                        for j,k in enumerate(keys):
-                              ax.plot(t,vals[k][0], label=k,color=self.cs[j])
-                              plot_range_on_curve(t,vals[k][0],vals[keys[2]][1],ax,color=self.cs[j])
+                        for j,p in enumerate(keys):
+                              ax.plot(t,vals[p][0], label=p,color=self.cs[j])
+                              plot_range_on_curve(t,vals[p][0],vals[keys[2]][1],ax,color=self.cs[j])
                         ax.legend()
                         ax.set_title(v[i])
+                        # ax.set_ylim(-0.5,2)
                         if k != 'EM':
                               ax.set_ylabel(f'{self.unit}')
+                              ax.set_ylim(-0.5,2)
+                        
+                        ax.axvline(0,-1,2,c=(0,0,0),alpha = 0.5)
                         
                   for a in axs.flat:
                         # a.label_outer()
@@ -81,6 +88,49 @@ class ERP_struct():
                               a.set_xlabel('time (s)')
                   figs.append(figname)
             return figs
+      
+      def emg_coactivation(self,subject,task_mapping,timeLag:float=1):
+            if not 'EM' in self.mapping:
+                  print('no EMG present')
+                  return False
+            EMG = {x.split('_')[-1]:self.data[x] for x in self.mapping['EM']}
+            output = {}
+            for task,channels in task_mapping.items():
+                  target = channels
+                  compares = [i for i in EMG if i not in target]
+                  to = {}
+                  for t in target:
+                        tdata = [i+1 for i in EMG[t][task][-1]]
+                        co = {}
+                        for c in compares:
+                              # coactivation comparison functionality. 
+                              cdata = [i+1 for i in EMG[c][task][-1]]
+                              x = binned_coactivation(cdata,tdata,self.fs,500) 
+                              co[c] = x
+                        to[t] = co
+                  output[task] = to
+            return 0
+def binned_coactivation(target,compare,sampling_rate,bin_length):
+      """binned_coactivation _summary_
+
+      Args:
+          target (_type_): timeseries being compared to
+          compare (_type_): non-target timeseries
+          sampling_rate (_type_): sampling rate that data is acquired at
+          bin_length (_type_): length of bins in time (ms)
+      """
+      x = np.divide(target,compare) # should trend higher as coactivation decreases, ratio of activation between target and agonist
+      bin_samps = bin_length * sampling_rate / 1000
+      out = []
+      for i in range(len(x)):
+            dat = x[i][:]
+            num_bins = int(math.floor(len(dat) / bin_samps))
+            binned_res = np.array_split(dat,num_bins)
+            res = [np.average(j) for j in binned_res]
+            out.append(res)
+      return out
+
+      
 def plot_range_on_curve(t,curve, bounds, ax:plt.axes,color):
       upper = np.add(curve,bounds)
       lower = np.subtract(curve,bounds)

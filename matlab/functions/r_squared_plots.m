@@ -26,7 +26,8 @@ full = p.Results.full;
 faceAlpha = opacity/100;
 conditionIdx = p.Results.conditionIdx;
 %% function
-path = sprintf("C:/Users/nbrys/Box/Brunner Lab/DATA/SCAN_Mayo/%s",subject);
+
+path = sprintf("/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo//%s",subject);
 brainDir = sprintf("%s/brain",path);
 dataDir = sprintf("%s/%s/analyzed",path,session);
 brain = load(sprintf("%s/brain_MNI.mat",brainDir));

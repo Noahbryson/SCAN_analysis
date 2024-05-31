@@ -16,7 +16,7 @@ from stimulusPresentation import format_Stimulus_Presentation_Session
 from response_datastructs import ERP_struct
 
 class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
-    def __init__(self,path:str or Path,subject:str,sessionID:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False,gammaRange=[65,115],refType: str='common') -> None: # type: ignore
+    def __init__(self,path:str or Path,subject:str,sessionID:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False,gammaRange=[65,115],refType: str='common',remove_trajectories:list[str]=[]) -> None: # type: ignore
         """
         Module containing functions for single session analysis of BCI2000 SCAN task
 
@@ -42,6 +42,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         self.main_dir = path
         self.subject = subject
         self.sessionID = sessionID
+        self.aggregate_results_dir = path / 'Aggregate'
         self.fs = fs
         if os.path.exists(self.main_dir/self.subject/'muscle_mapping.csv'):
             with open(self.main_dir/self.subject/'muscle_mapping.csv', 'r') as fp:
@@ -61,6 +62,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         self.epoch_info = self.epochStimulusCode_SCANtask(plot_stimuli)
         self.colorPalletBest = [(62/255,108/255,179/255), (27/255,196/255,225/255), (129/255,199/255,238/255),(44/255,184/255,149/255),(0,129/255,145/255), (193/255,189/255,47/255),(200/255,200/255,200/255)]
         self.data = self._processSignals(load,refType)
+        self.remove_trajectory(remove_trajectories)
         # self.session_info.data = self.getBroadBandGamma(gammaType='wide')
         self.sessionEMG = self.data['EMG']
         self.data['sEEG'], self.ref = self.remove_references()
@@ -74,7 +76,11 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         
         print('end init')
 
-
+    def remove_trajectory(self,traj_labels:list[str]):
+        if len(traj_labels) > 0:
+            for traj in traj_labels:
+                self.data['sEEG'].pop(traj)
+        
     def _processSignals(self,load=True,refType:str='common'):
         if refType.lower().find('com')>-1:
             commonAvg = self.getCommonAverages()
@@ -89,7 +95,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                 signalGroups[sig] = self._segmentSignals(sig)
             for sigType,data in signalGroups.items():
                 if sigType == 'EMG':
-                    data = self.processEMG(data)
+                    data = self.processEMG(data,plotWorkFlow=False)
                 if sigType == 'sEEG':
                     data = self.process_sEEG(data,refType,commonAvg['sEEG'])
                 if sigType == 'ECG':
@@ -190,8 +196,8 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         output = {}
         for muscle in muscles:
             data = [i for k,i in EMG.items() if k.find(muscle)>-1]
-            data = self._bipolarReference(data[0],data[1])
-            bp = bandpass(data,fs=self.fs,Wn=[25,400],order=3)
+            emg = self._bipolarReference(data[0],data[1])
+            bp = bandpass(emg,fs=self.fs,Wn=[25,400],order=3)
             n = notch(bp,self.fs,60,30,1)
             n = notch(n,self.fs,120,60,1)
             n = notch(n,self.fs,180,90,1)
@@ -204,19 +210,23 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             expon_z = math.e**smoothz
             hold[muscle] = expon_z - 1
             if plotWorkFlow:
-                fig,(a1,a2,a3,a4,a5,a6)  = plt.subplots(6,1, sharex=True)
-                a1.plot(n)
+                fig,(a00,a0,a1,a2,a3,a4,a5,a6)  = plt.subplots(8,1, sharex=True)
+                a00.plot(data[0][55000:115000:2])
+                a00.plot(data[1][55000:115000:2])
+                a0.plot(emg[55000:115000:2])
+                a1.plot(n[55000:115000:2])
                 a1.set_ylabel('filt')
-                a2.plot(abs_n)
+                a2.plot(abs_n[55000:115000:2])
                 a2.set_ylabel('abs')
-                a3.plot(log10)
+                a3.plot(log10[55000:115000:2])
                 a3.set_ylabel('log10')
-                a4.plot(z)
+                a4.plot(z[55000:115000:2])
                 a4.set_ylabel('z score')
-                a5.plot(smoothz)
+                a5.plot(smoothz[55000:115000:2])
                 a5.set_ylabel('smoothing')
-                a6.plot(expon_z-1)
+                a6.plot(expon_z[55000:115000:2]-1)
                 a6.set_ylabel('exponentiated')
+                fig.suptitle
                 plt.show()
             # hold[muscle] = temp
         output['EMG'] = hold
@@ -278,12 +288,16 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         epochs['info'] = ['motor onset', 'motor offset', 'rest offset']
         return epochs
     
-    def extractAllERPs(self,show=True,close=False,save=True,gamma=True,mu=False,beta=False):
+    def extractAllERPs(self,show=True,close=False,save=True,gamma=True,mu=False,beta=False,plot=True):
         """extractAllERPs _summary_
 
         Returns:
             _type_: _description_
         """
+        if not plot:
+            save = False
+            show = False
+            close = False
         epochs = {}
         for k,v in self.ERP_epochs.items(): # epoch information (muscle, list of intervals)
             if k.find('info') < 0:
@@ -297,16 +311,23 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                         else:
                             signals[sigType] = channel
                 epochs[k] = signals
-        
+        self.ERPS = {}
         if gamma:
             gammaERP = self.highGamma_ERP(epochs)
-            gammaERP.plotAverages_per_trajectory(self.subject)
+            if plot:
+                gammaERP.plotAverages_per_trajectory(self.subject)
+            self.ERPS['gamma'] = gammaERP
+
         if beta:
             betaERP = self.beta_ERP(epochs)
-            betaERP.plotAverages_per_trajectory(self.subject)
+            if plot:
+                betaERP.plotAverages_per_trajectory(self.subject)
+            self.ERPS['beta'] = betaERP
         if mu:
             muERP = self.mu_ERP(epochs)
-            muERP.plotAverages_per_trajectory(self.subject)
+            if plot:
+                muERP.plotAverages_per_trajectory(self.subject)
+            self.ERPS['mu'] = muERP
         if save:
             outDir = self._validateDir('figures')
             outDir = self._validateDir('figures/ERP')
@@ -322,7 +343,12 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         if show:
             plt.show()
         return epochs
-                
+    
+    def run_coactivation(self):
+        data: ERP_struct = self.ERPS['gamma']
+        data.emg_coactivation(self.subject,self.muscleMapping)
+        return 0
+             
     def highGamma_ERP(self,data,power: bool=True)-> ERP_struct:
         inputData = data
         output = self.general_ERP(inputData, self.gammaRange,power=power)
@@ -378,10 +404,30 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                         #     d = bandpass(epoch,self.fs,b,order=4)
                         #     hold.append(hilbert_env(d)**2)
                         # epoch = sum(hold)
-                        epoch = bandpass(epoch,self.fs,filterBand,order=4)
-                        epoch = hilbert_env(epoch)**2
-                        epoch = zscore_normalize(epoch)
-                        epoch = moving_average_np(epoch,1000)
+                        raw_trace = epoch
+                        bp = bandpass(epoch,self.fs,filterBand,order=4)
+                        hilb = hilbert_env(bp,smooth=0)**2
+                        zhilb = zscore_normalize(hilb)
+                        epoch = moving_average_np(zhilb,1000)
+                        epoch = savitzky_golay(epoch,201,1)
+                        # if channel.find('EM') > -1:
+                        #     fig = plt.figure('ERP methods')
+                        #     ax = fig.add_subplot(5,1,1)
+                        #     t = np.linspace(-.5,len(epoch)/self.fs,len(bp))
+                        #     ax.plot(t,raw_trace)
+                        #     ax = fig.add_subplot(5,1,2)
+                        #     ax.plot(t,bp)
+                        #     ax = fig.add_subplot(5,1,3)
+                        #     t = np.linspace(-.5,len(epoch)/self.fs,len(hilb))
+                        #     ax.plot(t,hilb)
+                        #     ax = fig.add_subplot(5,1,4)
+                        #     t = np.linspace(-.5,len(epoch)/self.fs,len(zhilb))
+                        #     ax.plot(t,zhilb)
+                        #     ax = fig.add_subplot(5,1,5)
+                        #     t = np.linspace(-.5,len(epoch)/self.fs,len(epoch))
+                        #     ax.plot(t,epoch)
+                        #     fig.suptitle(channel)
+                        #     plt.show()
                     else:
                         "Just looking at voltage"
                         epoch = bandpass(epoch,self.fs,filterBand,order=4)        
@@ -544,11 +590,18 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                 output[m_type] = epochOnsets
                 
         return output
-    def _validateDir(self,subDir=''):
-        if subDir != '':
-            saveDir = self.saveRoot/subDir
+    def _validateDir(self,mainDir = '',subDir=''):
+        if mainDir == '':
+            if subDir != '':
+                saveDir = self.saveRoot/subDir
+            else:
+                saveDir=self.saveRoot
         else:
-            saveDir=self.saveRoot
+            if subDir != '':
+                saveDir = mainDir/subDir
+            else:
+                saveDir=mainDir
+        
         if not os.path.exists(saveDir):
             os.mkdir(saveDir)
             print(f'writing {saveDir} as save path')
@@ -645,12 +698,14 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
     def sliceDataFrame(self,df,slice,key):
         df[key] = df[key].apply(lambda x: sliceArray(x,slice))
         return df
-    def taskPowerCorrelation_analysis(self, saveMAT:bool=False,freqRange:list = [1,300],plotSection:bool=False):
+    def task_power_analysis(self, saveMAT:bool=False,freqRange:list = [1,300],plotSection:bool=False):
         motor, rest, f = self._sEEG_epochPSDs([freqRange[0],freqRange[1]+1])
         gamma_slice = [np.where(f==self.gammaRange[0])[0][0],np.where(f==self.gammaRange[-1])[0][0]+1]
         motor, fullMotor = self._epoch_PSD_average(motor)
         rest, fullRest = self._epoch_PSD_average(rest)
         g_av = self._globalPSD_normalize()
+        fullMotor = self.normalize_single_trial_PSDs(fullMotor,g_av)
+        fullRest = self.normalize_single_trial_PSDs(fullRest,g_av)
         motor = self.normalizePSDs(motor,g_av)
         rest = self.normalizePSDs(rest,g_av)
         motor_gamma = self.sliceDataFrame(motor,gamma_slice,key='normalized')
@@ -673,13 +728,35 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                 ax3.legend()
                 fig.suptitle(f'{motor_gamma.loc[i,"name"]},{motor_gamma.loc[i,"movement"]}')
                 plt.show()
+                
+                """
+                TODO:need to compute r_sq before averaging and compare
+                also need to global normalize single trials not just the averages for the other metrics
+                """
         r_sq = self.compute_cross_correlations(motor_gamma,rest_gamma,stdev_gamma)
         p, U_res, d_res,roc_res = self.compute_power_distribution_significance(fullMotor,fullRest,gamma_slice)
+        # r_sq_all = self.compute_cross_correlations_by_trial(motor_gamma,rest_gamma,g_av)
         if saveMAT:
             saveDir = self._validateDir()
             for entry,values in r_sq.items():
                 scio.savemat(saveDir/f'{entry}_rsq.mat',values)
+            saveDir = self._validateDir(mainDir=self.aggregate_results_dir,subDir=f'{self.subject}_{self.sessionID}')
+            r_sq_out = {i.split('_')[-1]:j for i,j in r_sq.items()}
+            scio.savemat(saveDir/f'{self.sessionID}_rsq.mat',r_sq_out)
         return r_sq, p, U_res, d_res,roc_res
+    
+    def normalize_single_trial_PSDs(self,data_df:pd.DataFrame,global_average: dict):
+        cols = np.linspace(1,10,10,dtype=int).tolist()
+        renameCols = [f'norm_{i}' for i in cols]
+        temp = pd.DataFrame()
+        for k,v in global_average.items():
+            loc = data_df.loc[data_df['name'] == k]
+            loc[cols] = loc.loc[:,cols].applymap(lambda x: divide_by_array(x,v))
+            temp = pd.concat([temp,loc])
+        temp.rename({i:j for i,j in zip(cols,renameCols)},axis=1,inplace=True)
+        temp.sort_index(axis=0,inplace=True)
+        data_df[renameCols] = temp[renameCols]
+        return data_df
     
     
     def compute_cross_correlations(self,motor:pd.DataFrame,rest:pd.DataFrame,stdev:pd.DataFrame):
@@ -703,15 +780,20 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             res[i] = out
         
         return res
+    
+
     def compute_power_distribution_significance(self,motor:pd.DataFrame,rest:pd.DataFrame,frequency_slice:list):
         U_res = {}
         d_res = {}
         roc_res = {}
         p_res = {}
+        r_sq = {}
         channels = motor['name'].to_list()
         motor.set_index('name',inplace=True)
         rest.set_index('name',inplace=True)
-        epochCols = [i for i in motor.columns if type(i)==int]
+        # epochCols = [i for i in motor.columns if type(i)==int]
+        cols = np.linspace(1,10,10,dtype=int).tolist()
+        epochCols = [f'norm_{i}' for i in cols] # get normalized channel values to account for 1/f scaling. 
         for i in self.muscleMapping.keys():
             m_m = motor.query('movement==@i')
             r_m = rest.query('movement==@i')
@@ -719,6 +801,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             d_temp = {}
             roc_temp = {}
             p_temp = {}
+            rsq_temp = {}
             for chan in channels:
                 if chan.find('REF')<0:
                     m = m_m.loc[chan,epochCols].to_numpy()
@@ -728,6 +811,9 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                     U,p = mannwhitneyU(m_avg,r_avg)
                     d = cohendsD(m_avg,r_avg)
                     roc = calc_ROC(m_avg,r_avg,plot=False)
+                    # rsq_temp[chan] = signed_cross_correlation(m_avg)
+                    if chan == 'KL_10':
+                        pass
                     d_temp[chan] = d
                     temp[chan] = U
                     roc_temp[chan] = roc
@@ -763,14 +849,17 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         data = self.reshapeEffect(pvalDict)
         sig = []
         no_sig = []
+        description = {}
         for channel, vals in data.items():
             ps = list(vals.values())
             ps = np.array(ps)
             if np.any(ps < alpha):
                 sig.append(channel)
+                description[channel] = 1
             else:
                 no_sig.append(channel)
-        return sig, no_sig
+                description[channel] = 0
+        return sig, no_sig, description
             
 
     def aggregateResults(self,r_sq, p, U_res, d_res,roc_res,saveMAT=False):
@@ -913,7 +1002,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             plt.close(fig)
         return clusterRes
 
-    def cluster_permutation(self,metric,effectLabel,single_scores: pd.DataFrame,dataSubset:list=[],num_perm:int = 1000):
+    def cluster_permutation(self,metric,effectLabel,single_scores: pd.DataFrame,dataSubset:list=[],num_perm:int = 1000,save: bool=False):
         data = self.reshapeEffect(metric)
         label = f'{self.subject}_{effectLabel}'
         if len(dataSubset) > 0:
@@ -944,14 +1033,14 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                 # silhouette_score_samples = metrics.silhouette_samples(xyz,labels)
                 # clusters.append({'num':j,'score':silhouette_score,'score_samples':silhouette_score_samples,'clf':classifier})
             # print(i)
-        
-        avgs.to_csv(self._validateDir('clustering_validation') / f'{effectLabel}_{tag}_cluster_permutation.csv')
+        if save:
+            avgs.to_csv(self._validateDir('clustering_validation') / f'{effectLabel}_{tag}_cluster_permutation.csv')
         return avgs
         
     
     
-    def runEffectClusters(self, effectDict, dataSubset:list=[],title='',for_subplot:bool=False, ax: bool or plt.axes=False,  # type: ignore
-                          clusterFlag:bool= False, num_clusters=5,exportFlag:bool=False,effectLabel:str=''):
+    def runEffectClusters(self, effectDict, channel_description,dataSubset:list=[],title='',for_subplot:bool=False, ax: bool or plt.axes=False,  # type: ignore
+                          clusterFlag:bool= True, num_clusters=5,save:bool=False,effectLabel:str=''):
         """plot effect sizes for the 3 movements as 3D scatter plot. 
             x-axis is hand
             y-axis is foot
@@ -979,6 +1068,9 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         if len(dataSubset) > 0:
             # print('parsing via keys')
             data = parseDictViaKeys(data=data,keys=dataSubset)
+            tag = '_sig'
+        else:
+            tag=''
         n_samp = len(data)
         print(f'{title} num_chans:{n_samp}')
         xyz = np.empty([n_samp,3])
@@ -993,6 +1085,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         if clusterFlag:
             cluster_res = self.kmeans_cluster(data,num_clusters)
             cluster_labs = cluster_res.labels_
+            SCAN_cluster_ID = []
             cluster_dist = np.zeros(cluster_res.n_clusters)
             cluster_angle_difference = np.zeros([cluster_res.n_clusters,2])
             for i,dist in enumerate(cluster_res.cluster_centers_):
@@ -1004,6 +1097,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             SCAN_euclid = cluster_dist[SCAN_cluster]
             print(f'\n\n{title} results\nSCAN Cluster is {SCAN_cluster},\ncoordinates: {cluster_res.cluster_centers_[SCAN_cluster]}\n distance: {SCAN_euclid}')
             cmap = [self.colorPalletBest[i] for i in range(len(np.unique(cluster_labs)))]
+            
         for i,(k,v) in enumerate(data.items()):
             # locs = v.keys()
             h = v['Hand'] # x -> hand   
@@ -1029,24 +1123,27 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                 c_lab = cluster_labs[i]
                 c = cmap[c_lab]
                 if c_lab == SCAN_cluster:
+                    SCAN_cluster_ID.append(1)
                     print(f'{k}: {distance} dist\nhand {round(h,2)} foot {round(f,2)} tongue {round(t,2)}')
                     targetClusterMetrics.append([k,i,distance,angles[0],angles[1],xyz[i]])
                     print(f'cluster {c_lab}')
                     size = 50
                 else:
+                    SCAN_cluster_ID.append(0)
                     size = 10
             else: 
                 size = 10
             
             ax.scatter(xs=h,ys=f,zs=t,s = size,color=c,label=lab)
         threshDict = {k[0]:k[1:] for k in targetClusterMetrics}
-        if clusterFlag and exportFlag:
-            channel_labels = {i:j for i,j in zip(data.keys(),cluster_labs)}
-            filename = f'{self.subject}_{self.sessionID}_{title}_{effectLabel}_{num_clusters}_SCANcluster.mat'
+        if clusterFlag and save:
+            
+            channel_labels = {i:[j,channel_descriptions[i],k] for i,j,k in zip(data.keys(),cluster_labs,SCAN_cluster_ID)}
+            filename = f'{self.subject}_{self.sessionID}_{title}_{effectLabel}_{num_clusters}{tag}_SCANcluster.mat'
             savedir = self._validateDir('clustering_result')
             output = {'clusterRes':threshDict}
             scio.savemat(savedir/filename,mdict=output,format='5')
-            filename = f'{self.subject}_{self.sessionID}_{title}_{effectLabel}_{num_clusters}_clustered_channel_labels.mat'
+            filename = f'{self.subject}_{self.sessionID}_{title}_{effectLabel}_{num_clusters}{tag}_clustered_channel_labels.mat'
             scio.savemat(savedir/filename,mdict=channel_labels,format='5')
             
         # ax.scatter(xs=xyz[:,0],ys=xyz[:,1],zs=xyz[:,2])
@@ -1066,6 +1163,10 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         ax.grid(False)
         # plt.grid(visible=False)
         # sns.despine()
+        
+        distinctipy.color_swatch(cmap)
+        print(cluster_dist)
+        print(cluster_angle_difference)
         return ax,threshDict
     
     def _sort_clusters(self,distances, angle_differences):
@@ -1146,11 +1247,43 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                 else:
                     out[c] = temp
         return out
+    def parse_results_for_triple_responders(self,result:dict,dataSubset:list=[],save:bool=False, label = 'all'):
+        result = self.reshapeEffect(result)
+        if len(dataSubset) > 0:
+            # print('parsing via keys')
+            result = parseDictViaKeys(data=result,keys=dataSubset)
 
-def epoch_powerAverage(a,f_slice = [0]):
+        inter = []
+        hand = []
+        foot = []
+        face = []
+        na = []
+        arrayMap = {0:hand,1:foot,2:face}
+        for i,j in result.items():
+            data = np.array([v for v in j.values()])
+            if (data > 0.15).all():
+                inter.append(i)
+            elif (data > 0.15).any():
+                if data[0] > 0.15 and (data[1:]<0.15).all():
+                    hand.append(i)
+                elif data[1] > 0.15 and data[0] <0.15 and data[2] <0.15:
+                    foot.append(i)
+                elif data[2] > 0.15 and (data[:2]<0.15).all():
+                    face.append(i)
+                else:
+                    arrayMap[np.argmax(data)].append(i)                    
+            else:
+                na.append(i)
+        saveOut = {'hand':hand,'foot':foot,'face':face,'inter':inter,'na':na}
+        if save:
+            saveDir = self._validateDir(mainDir=self.aggregate_results_dir,subDir=f'{self.subject}_{self.sessionID}')
+            scio.savemat(saveDir/f'{self.sessionID}_channel_sort_{label}.mat',saveOut)
+        return inter
+
+def epoch_powerAverage(a,f_slice = []):
     averagePower = np.empty(len(a))
     for i,epoch in enumerate(a):
-        if f_slice[1]:
+        if len(f_slice)>1:
             # print('slicing')
             averagePower[i]=np.mean(sliceArray(epoch,f_slice))
         else: 
@@ -1245,7 +1378,9 @@ def sliceArray(array, interval):
 def adjust_color(color: tuple,intensity:float):
     colour = [intensity*i for i in color]
     return tuple(colour)
-
+def divide_by_array(data,divisor):
+    res = np.divide(data,divisor)
+    return res
 """Script for debugging"""
 
 if __name__ == '__main__':
@@ -1261,29 +1396,54 @@ if __name__ == '__main__':
     # session = 'post_ablation'
     # session = 'aggregate'
     gammaRange = [70,170]
-    a = SCAN_SingleSessionAnalysis(dataPath,subject,session,load=True,plot_stimuli=False,gammaRange=gammaRange,refType='common')
-    # a.extractAllERPs(close=True,save=True,gamma=True,beta=True,mu=True)
+    a = SCAN_SingleSessionAnalysis(dataPath,subject,session,remove_trajectories=['OR'],
+            load=True,plot_stimuli=False,gammaRange=gammaRange,refType='common')
+    a.extractAllERPs(show=False,save=False,close=True,gamma=True,beta=False,mu=False,plot=False)
+    a.run_coactivation()
+    
     # a.probeSignalQuality('OR_7_8')
     # a.export_session_EMG()
     # a.export_epochs(signalType='EMG',fname='emg')
-    r_sq, p_vals, U_res, d_res,roc_res = a.taskPowerCorrelation_analysis(saveMAT=False)
-    sig_chans, nonsig_chans = a.returnSignificantLocations(p_vals,alpha=0.05)
-    # x = a.cluster_optimization(r_sq,'r_sq',dataSubset=sig_chans)
-    effect_of_interest = r_sq
-    effect_name = 'r_sq'
-    datasubset = []
-    # cluster_res = a.cluster_optimization(effect_of_interest,effect_name,dataSubset=datasubset,close=False)
-    # a.cluster_permutation(effect_of_interest,effect_name,dataSubset=datasubset, single_scores=cluster_res)
-    fig = plt.figure(figsize=(20,8))
-    row = 1; col =2
-    ax = fig.add_subplot(row, col, 1, projection='3d')
-    ax.view_init(elev=30, azim=105, roll=0)
-    a.runEffectClusters(effect_of_interest,title=effect_name,dataSubset=datasubset,clusterFlag=True, num_clusters=3,ax=ax,for_subplot=True,effectLabel='(r^2)',exportFlag=True)
-    ax2 = fig.add_subplot(row, col, 2, projection='3d')
-    ax2.view_init(elev=30, azim=105, roll=0)
-    a.runEffectClusters(effect_of_interest,title=effect_name,dataSubset=datasubset,clusterFlag=True, num_clusters=5,ax=ax2,for_subplot=True,effectLabel='(r^2)',exportFlag=True)
-    # sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
-    # sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
-    # a.scatterMetrics(sig_r,sig_d,sig_roc,sig_U) # significant Channels
-    # a.visualizeMetrics(r_sq, d_res,roc_res,U_res,numBins=40) # all channels
-    a.show()
+    pp = True
+    precentral_locations = ['HL7', 'HL8', 'HL9', 'IL13', 'IL14', 'JL12', 'JL13', 'JL14', 'KL7', 'KL8', 'KL9', 'KL10', 'KL11', 'KL12', 'KL13', 'KL14', 'KL15', 'KL16', 'LL4', 'LL5', 'LL6', 'LL7', 'LL8', 'LL9', 'LL10', 'ML3', 'ML4', 'ML5', 'ML8', 'ML9', 'NL11', 'NL12']
+    precentral_locations = [i[:2]+'_'+i[2:] for i in precentral_locations]
+    if pp:
+        r_sq, p_vals, U_res, d_res,roc_res = a.task_power_analysis(saveMAT=True)
+        sig_chans, nonsig_chans, channel_descriptions = a.returnSignificantLocations(p_vals,alpha=0.05)
+        # x = a.cluster_optimization(r_sq,'r_sq',dataSubset=[],close=False,save=True)
+        effect_of_interest = r_sq
+        effect_name = 'r_sq'
+        datasubset = sig_chans
+        datasubset = []
+        a.parse_results_for_triple_responders(effect_of_interest,precentral_locations,save=True,label='precentral')
+        a.parse_results_for_triple_responders(effect_of_interest,sig_chans,save=True,label='significant')
+        a.parse_results_for_triple_responders(effect_of_interest,save=True,label='all')
+        
+        # cluster_res = a.cluster_optimization(effect_of_interest,effect_name,dataSubset=datasubset,close=False,save=True)
+        # a.cluster_permutation(effect_of_interest,effect_name,dataSubset=datasubset, single_scores=cluster_res,save=True)
+        # a.show()
+        # fig = plt.figure(figsize=(20,8))
+        # row = 1; col =1
+        # ax = fig.add_subplot(row, col, 1, projection='3d')
+        # ax.view_init(elev=30, azim=105, roll=0)
+        # a.runEffectClusters(d_res,
+        #     channel_description=channel_descriptions,title=effect_name,
+        #     dataSubset=datasubset, num_clusters=5,ax=ax,
+        #     for_subplot=True,effectLabel='(d)',save=False)
+        # ax2 = fig.add_subplot(row, col, 1, projection='3d')
+        # ax2.view_init(elev=30, azim=105, roll=0)
+        # a.runEffectClusters(r_sq,
+        #     channel_description=channel_descriptions,title=effect_name,
+        #     dataSubset=datasubset, num_clusters=5,ax=ax2,for_subplot=True,
+        #     effectLabel='(r^2)',save=False)
+        # ax2 = fig.add_subplot(row, col, 3, projection='3d')
+        # ax2.view_init(elev=30, azim=105, roll=0)
+        # a.runEffectClusters(roc_res,
+        #     channel_description=channel_descriptions,title=effect_name,
+        #     dataSubset=datasubset, num_clusters=5,ax=ax2,for_subplot=True,
+        #     effectLabel='(AUC)',save=False)
+        # sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
+        # sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
+        # a.scatterMetrics(sig_r,sig_d,sig_roc,sig_U) # significant Channels
+        # a.visualizeMetrics(r_sq, d_res,roc_res,U_res,numBins=40) # all channels
+        # a.show()

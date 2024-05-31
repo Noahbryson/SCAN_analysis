@@ -6,6 +6,7 @@ import scipy.stats as stats
 from functions.filters import *
 import pickle
 import pandas as pd 
+import re
 class format_Stimulus_Presentation_Session():
     def __init__(self,loc:Path,subject,plot_stimuli=False,HDF:bool=False):
         """
@@ -202,7 +203,8 @@ class format_Stimulus_Presentation_Session():
         ax.plot(t,data)
         cmap = distinctipy.get_colors(len(epochs))
         for i,k in enumerate(epochs.keys()):
-            val = int(k.split('_')[-1])
+            # vals = int(k.split('_')[0])
+            val = int(re.findall(r'\d+', k)[0])
             for q,j in enumerate(epochs[k]):
                 if q == 0:
                     # ax.axvline(t[j[0]], c=cmap[i], label=k)

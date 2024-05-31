@@ -160,8 +160,8 @@ def moving_average_np(data, window_size):
     Returns:
         numpy array: The filtered data as a moving average.
     """
-    weights = np.ones(window_size) / window_size
-    return np.convolve(data, weights, mode='valid')
+    weights = np.ones(window_size) 
+    return np.convolve(data, weights, mode='same')/ window_size
 
 def moving_average_scipy(data, window):
     from scipy.ndimage import uniform_filter1d

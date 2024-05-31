@@ -11,4 +11,4 @@ if __name__ == '__main__':
 
     a = SCAN_SingleSessionAnalysis(dataPath,subject,session,load=True,plot_stimuli=False)
     a.export_epochs(signalType='EMG',fname='emg')
-    a.taskPowerCorrelation_analysis(saveMAT=True)
+    a.task_power_analysis(saveMAT=True)
