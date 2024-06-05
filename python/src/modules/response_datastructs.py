@@ -10,7 +10,8 @@ import math
 import distinctipy
 import random
 from typing import List
-import random
+import pickle
+from pathlib import Path
 
 
 class ERP_struct():
@@ -34,10 +35,11 @@ class ERP_struct():
                         temp.sort()
                   self.mapping[i] = temp
             self.num_traj = len(self.trajectories)
-            self.data,self.datalabels= self._reshape_data(data,channels)            
+            self.data, self.ERP_ANOVA, self.datalabels= self._reshape_data(data,channels)            
       
       def _reshape_data(self,data: dict,channels):
             output = {}
+            outstat = {}
             labels = ['avg','stdev','raw']
             for c in channels:
                   temp = {}
@@ -47,8 +49,25 @@ class ERP_struct():
                         raw = v[2][c]
                         # CI = confidence_interval(a=raw,alpha=0.95)
                         temp[k] = [avg,stdev,raw]
+                        self.samplen = len(avg)
+                  stat_res = self.ERP_comparison(temp,self.samplen)
+                  outstat[c] = stat_res
                   output[c] = temp
-            return output, labels
+            return output, outstat, labels
+      
+      def ERP_comparison(self,data: dict,sampLen: int):
+            vals = []
+            bin_length = 500
+            bin_samps = int(bin_length * self.fs / 1000)
+            num_bins = int(math.floor(sampLen / bin_samps))
+            for v in data.values():
+                  b = binned_ERP(v[-1],num_bins=num_bins)
+                  vals.append(b)
+            res = st.f_oneway(vals[0],vals[1],vals[2],axis=0)
+                  
+            
+            
+            return res
       
       
       def plotAverages_per_trajectory(self,subject,timeLag:float=1)->List[plt.Figure]:
@@ -60,23 +79,27 @@ class ERP_struct():
                   plotShape = np.shape(np.zeros(fullArr).reshape((-1,nCol)))
                   
                   data = [self.data[x] for x in v]
+                  stats = [self.ERP_ANOVA[x] for x in v]
+                  stattime = np.linspace(0.5-timeLag,self.samplen/self.fs - timeLag,12)
                   title = f'{subject} {k}, {self.method}, {self.filterband} Hz ERPs'
                   figname = f'{subject}_{k}_{self.method}_{self.filterband}_Hz_ERPs'
                   fig, axs = plt.subplots(plotShape[0],plotShape[1],num =figname,sharex=True,sharey=True,figsize=(20,15))
                   for i,(vals,ax) in enumerate(zip(data,fig.axes)):
                         keys = list(vals.keys())
+                        statPlot = np.array([[a,-1] for a,y in zip(stattime,stats[i].pvalue) if y <=0.05]).reshape(-1,2).T
                         
                         t = np.linspace(-timeLag,len(vals[keys[0]][0])/self.fs-timeLag,len(vals[keys[0]][0]))                        
                         # a.set_visible(True)
                         for j,p in enumerate(keys):
                               ax.plot(t,vals[p][0], label=p,color=self.cs[j])
                               plot_range_on_curve(t,vals[p][0],vals[keys[2]][1],ax,color=self.cs[j])
+                        ax.scatter(statPlot[0],statPlot[1], color=(0,0,0))
                         ax.legend()
                         ax.set_title(v[i])
                         # ax.set_ylim(-0.5,2)
                         if k != 'EM':
                               ax.set_ylabel(f'{self.unit}')
-                              ax.set_ylim(-0.5,2)
+                              ax.set_ylim(-1.1,2)
                         
                         ax.axvline(0,-1,2,c=(0,0,0),alpha = 0.5)
                         
@@ -89,48 +112,96 @@ class ERP_struct():
                   figs.append(figname)
             return figs
       
-      def emg_coactivation(self,subject,task_mapping,timeLag:float=1):
+      def emg_isolation(self,subject,task_mapping,timeLag:float=1,save:bool=False, plot: bool=False,figPath = '', dataPath =''):
             if not 'EM' in self.mapping:
                   print('no EMG present')
                   return False
+            if dataPath != '' and isinstance(dataPath,str):
+                  dataPath = Path
             EMG = {x.split('_')[-1]:self.data[x] for x in self.mapping['EM']}
+            k1 = list(EMG.keys()); k2 = list(EMG[k1[0]].keys())
+            sampLen = len(EMG[k1[0]][k2[0]][1])
             output = {}
+            stats_out = {}
+            bin_length = 500 # in ms
+            bin_samps = int(bin_length * self.fs / 1000)
+            num_bins = int(math.floor(sampLen / bin_samps))
+            timepoints = np.linspace(-timeLag + (bin_length/1000),(sampLen/self.fs)-timeLag,num_bins)
             for task,channels in task_mapping.items():
                   target = channels
                   compares = [i for i in EMG if i not in target]
                   to = {}
+                  stats_t ={}
                   for t in target:
-                        tdata = [i+1 for i in EMG[t][task][-1]]
+                        tdata = [i+1 for i in EMG[t][task][2]]
                         co = {}
+                        stats_c = {}
                         for c in compares:
-                              # coactivation comparison functionality. 
-                              cdata = [i+1 for i in EMG[c][task][-1]]
-                              x = binned_coactivation(cdata,tdata,self.fs,500) 
+                              # isolation comparison functionality. 
+                              cdata = [i+1 for i in EMG[c][task][2]]
+                              x = binned_muscle_isolation(cdata,tdata,num_bins=num_bins) 
                               co[c] = x
+                              stats_c[c] = binned_timeseries_stats(x)
                         to[t] = co
-                  output[task] = to
-            return 0
-def binned_coactivation(target,compare,sampling_rate,bin_length):
-      """binned_coactivation _summary_
+                        output[t] = co
+                        stats_out[t] = stats_c
+                  # output[task] = to
+            if plot or save or (plot==save==True):
+                  k = 'EMG'
+                  numChan = len(output)
+                  nCol = 1
+                  fullArr = math.ceil(numChan/nCol) * nCol
+                  plotShape = np.shape(np.zeros(fullArr).reshape((-1,nCol)))
+                  title = f'{subject}_{k} isolation index'
+                  figname = f'{subject}_{k}_isolation_index'
+                  fig, axs = plt.subplots(plotShape[0],plotShape[1],num =figname,sharex=True,sharey=True,figsize=(20,15))
+                  for i,(target_mus,ax) in enumerate(zip(output,fig.axes)):                        
+                        for j,(k,v) in enumerate(output[target_mus].items()):
+                              stats = stats_out[target_mus][k].pvalue
+                              stats = stats * len(stats)
+                              statsPlot = [[x,1.1 + 0.15*j] for x,y in zip(timepoints,stats) if y <= 0.05]
+                              statsPlot = np.array(statsPlot).reshape(-1,2).T
+                              ax.errorbar(timepoints,np.mean(v,axis=0),yerr=np.std(v,axis=0),label=k,capsize=5,color=self.cs[j])
+                              ax.scatter(timepoints,np.mean(v,axis=0),label='_',color=self.cs[j])
+                              ax.scatter(statsPlot[0],statsPlot[1],label='_', color=self.cs[j], marker='*')
+                              # ax.set_ylim(0,1.5)
+                              ax.legend()
+                        ax.set_title(f'{target_mus} isolation index')
+                  fig.suptitle(title)
+            if save:
+                  plt.figure(fig)
+                  plt.savefig(figPath / f'{figname}.svg')
+                  with open(dataPath/ f'{figname}.pkl', 'wb') as fp:
+                        pickle.dump(output,fp)
+            
+            if not plot:
+                  plt.close(fig=fig)
+            
+            return output, stats_out
+      
+def binned_timeseries_stats(data):
+      res = st.ttest_1samp(data,popmean=0,axis=0)
+      return res
+      
 
-      Args:
-          target (_type_): timeseries being compared to
-          compare (_type_): non-target timeseries
-          sampling_rate (_type_): sampling rate that data is acquired at
-          bin_length (_type_): length of bins in time (ms)
-      """
-      x = np.divide(target,compare) # should trend higher as coactivation decreases, ratio of activation between target and agonist
-      bin_samps = bin_length * sampling_rate / 1000
+def binned_muscle_isolation(antagonist,target,num_bins):
+      x = np.ones(np.shape(target)) - np.divide(antagonist,target) # 1 when target muscle is solely responsive 
       out = []
       for i in range(len(x)):
             dat = x[i][:]
-            num_bins = int(math.floor(len(dat) / bin_samps))
             binned_res = np.array_split(dat,num_bins)
-            res = [np.average(j) for j in binned_res]
+            res = np.array([np.average(j) for j in binned_res])
+            res = np.where(res<0,0,res) # if antagonist muscle activity exceeds target muscle, set isolation index to zero.        
             out.append(res)
       return out
-
-      
+def binned_ERP(ERP, num_bins):
+      out = []
+      for i in range(len(ERP)):
+            dat = ERP[i][:]
+            binned_res = np.array_split(dat,num_bins)
+            res = np.array([np.average(j) for j in binned_res])
+            out.append(res)
+      return out
 def plot_range_on_curve(t,curve, bounds, ax:plt.axes,color):
       upper = np.add(curve,bounds)
       lower = np.subtract(curve,bounds)
@@ -385,3 +456,14 @@ class spectrumResponses():
 def getColorMatrix(colors, IndexVector):
       IndexVector = IndexVector - min(IndexVector) #make sure is 0 indexed. 
       return [colors[j] for j in IndexVector]
+
+def export_ERP_Obj(obj, subject,fpath:Path|str,method):
+            if isinstance(fpath,str):
+                  fpath = Path(fpath)
+            fp = fpath / f'{subject}_{method}.pkl'
+            with open(fp, 'wb') as fp:
+                  pickle.dump(obj,fp)
+def load_ERP_Obj(fpath):
+      with open(fpath, 'rb') as fp:
+            x = pickle.load(fp)
+      return x             

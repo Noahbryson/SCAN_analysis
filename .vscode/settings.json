@@ -1,4 +1,4 @@
 {
-      "docwriter.style": "NumPy",
+      "docwriter.style": "Auto-detect",
       "docwriter.progress.trackFunctions": false
 }

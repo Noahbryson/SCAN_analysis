@@ -195,4 +195,8 @@ def confidence_interval(a, alpha: float=0.95):
                     loc=np.mean(j),scale=stats.sem(j))
             output[i] = CI
         return output
+    
+    
+def one_samp_ttest(data,popmean=0,test_type='two-sided'):
+    return stats.ttest_1samp(data,popmean=popmean,alternative=test_type)
 

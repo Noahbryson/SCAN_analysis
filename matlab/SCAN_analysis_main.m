@@ -19,6 +19,28 @@ target_cmap = vertex_cmap(target_cmap,annotation_remap);
 
 rosa_map = channel_rosa_map('/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/BJH041/channel_rosa_map.csv');
 colors=[62,108,179; 27,196,225; 129,199,238;44,184,149;0,129,145;193,189,47;200,200,200]/256;
+%% all trajectories
+faceAlpha = 0.1;
+figure(7)
+subplot(1,3,1)
+hold on
+plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",faceAlpha);
+plotBallsOnVolume(gca,brain.tala.electrodes,[0,0,0],2);
+view(0,90)
+hold off
+subplot(1,3,2)
+hold on
+plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",faceAlpha);
+plotBallsOnVolume(gca,brain.tala.electrodes,[0,0,0],2);
+view(180,0)
+hold off
+subplot(1,3,3)
+hold on
+plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",faceAlpha);
+plotBallsOnVolume(gca,brain.tala.electrodes,[0,0,0],2);
+view(-90,0)
+hold off
+
 %% Task Metric Analysis
 % r_squared_compare(subject);
 % abl = AblationLocalization(subject,'opacity',20,'forVideo',1,'full',0);

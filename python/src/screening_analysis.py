@@ -10,8 +10,8 @@ import seaborn as sns
 from sklearn import metrics
 from sklearn.cluster import KMeans
 from functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, geometric_mean
-from stimulusPresentation import screening_session, format_Stimulus_Presentation_Session, sliceArray
-from response_datastructs import ERP_struct, spectrumResponses
+from python.src.modules.stimulusPresentation import screening_session, format_Stimulus_Presentation_Session, sliceArray
+from python.src.modules.response_datastructs import ERP_struct, spectrumResponses
 from SCAN_SingleSessionAnalysis import readPickle, writePickle, alphaSortDict
 
 class screening_analysis(screening_session):

@@ -12,8 +12,8 @@ import seaborn as sns
 from sklearn import metrics
 from sklearn.cluster import KMeans
 from functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, geometric_mean,kde,euclidean_distance, signed_cross_correlation, angle_3D, angle_distances_3D
-from stimulusPresentation import format_Stimulus_Presentation_Session
-from response_datastructs import ERP_struct
+from modules.stimulusPresentation import format_Stimulus_Presentation_Session
+from modules.response_datastructs import ERP_struct, export_ERP_Obj
 
 class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
     def __init__(self,path:str or Path,subject:str,sessionID:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False,gammaRange=[65,115],refType: str='common',remove_trajectories:list[str]=[]) -> None: # type: ignore
@@ -76,6 +76,8 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         
         print('end init')
 
+    
+    
     def remove_trajectory(self,traj_labels:list[str]):
         if len(traj_labels) > 0:
             for traj in traj_labels:
@@ -329,13 +331,18 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                 muERP.plotAverages_per_trajectory(self.subject)
             self.ERPS['mu'] = muERP
         if save:
-            outDir = self._validateDir('figures')
-            outDir = self._validateDir('figures/ERP')
+            outDir = self._validateDir(mainDir=self.aggregate_results_dir,subDir=f'{self.subject}_{self.sessionID}')
+            outDir = self._validateDir(mainDir=outDir,subDir='ERPs')
+
+            for i,j in self.ERPS.items():
+                export_ERP_Obj(j,self.subject,outDir,method = f'{i}_ERP')
+            outDir = self._validateDir(subDir='figures')
+            outDir = self._validateDir(subDir='figures/ERP')
             for i in plt.get_figlabels():
                 plt.figure(i)
-                outDir = self._validateDir('figures/ERP/png')
+                outDir = self._validateDir(subDir='figures/ERP/png')
                 plt.savefig(outDir / f'{i}.png')
-                outDir = self._validateDir('figures/ERP/svg')
+                outDir = self._validateDir(subDir='figures/ERP/svg')
                 plt.savefig(outDir / f'{i}.svg')
         if close:
             plt.close('all')
@@ -344,9 +351,11 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             plt.show()
         return epochs
     
-    def run_coactivation(self):
+    def run_coactivation(self,save:bool=False, plot: bool=False):
         data: ERP_struct = self.ERPS['gamma']
-        data.emg_coactivation(self.subject,self.muscleMapping)
+        imageDir = self._validateDir(self.saveRoot,'figures/ERP/iso_svg')
+        dataDir = self._validateDir(mainDir=self.aggregate_results_dir,subDir=f'{self.subject}_{self.sessionID}')
+        data.emg_isolation(self.subject,self.muscleMapping,save=save,plot=plot,figPath = imageDir, dataPath =dataDir)
         return 0
              
     def highGamma_ERP(self,data,power: bool=True)-> ERP_struct:
@@ -409,23 +418,27 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                         hilb = hilbert_env(bp,smooth=0)**2
                         zhilb = zscore_normalize(hilb)
                         epoch = moving_average_np(zhilb,1000)
-                        epoch = savitzky_golay(epoch,201,1)
-                        # if channel.find('EM') > -1:
+                        # epoch_s = savitzky_golay(epoch,201,1)
+                        # if channel.find('KL') > -1:
                         #     fig = plt.figure('ERP methods')
-                        #     ax = fig.add_subplot(5,1,1)
+                        #     ax = fig.add_subplot(6,1,1)
                         #     t = np.linspace(-.5,len(epoch)/self.fs,len(bp))
                         #     ax.plot(t,raw_trace)
-                        #     ax = fig.add_subplot(5,1,2)
+                        #     ax = fig.add_subplot(6,1,2)
                         #     ax.plot(t,bp)
-                        #     ax = fig.add_subplot(5,1,3)
+                        #     ax = fig.add_subplot(6,1,3)
                         #     t = np.linspace(-.5,len(epoch)/self.fs,len(hilb))
                         #     ax.plot(t,hilb)
-                        #     ax = fig.add_subplot(5,1,4)
+                        #     ax = fig.add_subplot(6,1,4)
                         #     t = np.linspace(-.5,len(epoch)/self.fs,len(zhilb))
                         #     ax.plot(t,zhilb)
-                        #     ax = fig.add_subplot(5,1,5)
+                        #     ax = fig.add_subplot(6,1,5)
                         #     t = np.linspace(-.5,len(epoch)/self.fs,len(epoch))
                         #     ax.plot(t,epoch)
+                        #     ax = fig.add_subplot(6,1,6)
+                        #     t = np.linspace(-.5,len(epoch_s)/self.fs,len(epoch_s))
+                        #     ax.plot(t,epoch_s)
+                            
                         #     fig.suptitle(channel)
                         #     plt.show()
                     else:
@@ -607,7 +620,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             print(f'writing {saveDir} as save path')
         else:
             print('path exists')
-        return saveDir
+        return Path(saveDir)
     def _sEEG_epochPSDs(self,freqs):
         move = pd.DataFrame()
         cols = self.task_epochs.columns
@@ -1392,58 +1405,61 @@ if __name__ == '__main__':
     else:
         dataPath = userPath/"Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo"
     subject = 'BJH041'
-    session = 'pre_ablation'
-    # session = 'post_ablation'
+    sessions = ['pre_ablation']
+    sessions = ['post_ablation']
+    sessions = ['pre_ablation','post_ablation']
+
     # session = 'aggregate'
     gammaRange = [70,170]
-    a = SCAN_SingleSessionAnalysis(dataPath,subject,session,remove_trajectories=['OR'],
-            load=True,plot_stimuli=False,gammaRange=gammaRange,refType='common')
-    a.extractAllERPs(show=False,save=False,close=True,gamma=True,beta=False,mu=False,plot=False)
-    a.run_coactivation()
-    
-    # a.probeSignalQuality('OR_7_8')
-    # a.export_session_EMG()
-    # a.export_epochs(signalType='EMG',fname='emg')
-    pp = True
-    precentral_locations = ['HL7', 'HL8', 'HL9', 'IL13', 'IL14', 'JL12', 'JL13', 'JL14', 'KL7', 'KL8', 'KL9', 'KL10', 'KL11', 'KL12', 'KL13', 'KL14', 'KL15', 'KL16', 'LL4', 'LL5', 'LL6', 'LL7', 'LL8', 'LL9', 'LL10', 'ML3', 'ML4', 'ML5', 'ML8', 'ML9', 'NL11', 'NL12']
-    precentral_locations = [i[:2]+'_'+i[2:] for i in precentral_locations]
-    if pp:
-        r_sq, p_vals, U_res, d_res,roc_res = a.task_power_analysis(saveMAT=True)
-        sig_chans, nonsig_chans, channel_descriptions = a.returnSignificantLocations(p_vals,alpha=0.05)
-        # x = a.cluster_optimization(r_sq,'r_sq',dataSubset=[],close=False,save=True)
-        effect_of_interest = r_sq
-        effect_name = 'r_sq'
-        datasubset = sig_chans
-        datasubset = []
-        a.parse_results_for_triple_responders(effect_of_interest,precentral_locations,save=True,label='precentral')
-        a.parse_results_for_triple_responders(effect_of_interest,sig_chans,save=True,label='significant')
-        a.parse_results_for_triple_responders(effect_of_interest,save=True,label='all')
-        
-        # cluster_res = a.cluster_optimization(effect_of_interest,effect_name,dataSubset=datasubset,close=False,save=True)
-        # a.cluster_permutation(effect_of_interest,effect_name,dataSubset=datasubset, single_scores=cluster_res,save=True)
+    for session in sessions:
+        a = SCAN_SingleSessionAnalysis(dataPath,subject,session,remove_trajectories=['OR'],
+                load=True,plot_stimuli=False,gammaRange=gammaRange,refType='common')
+        a.extractAllERPs(plot=True,show=False,save=True,close=True,gamma=True,beta=False,mu=False)
+        a.run_coactivation(save=True,plot=False)
         # a.show()
-        # fig = plt.figure(figsize=(20,8))
-        # row = 1; col =1
-        # ax = fig.add_subplot(row, col, 1, projection='3d')
-        # ax.view_init(elev=30, azim=105, roll=0)
-        # a.runEffectClusters(d_res,
-        #     channel_description=channel_descriptions,title=effect_name,
-        #     dataSubset=datasubset, num_clusters=5,ax=ax,
-        #     for_subplot=True,effectLabel='(d)',save=False)
-        # ax2 = fig.add_subplot(row, col, 1, projection='3d')
-        # ax2.view_init(elev=30, azim=105, roll=0)
-        # a.runEffectClusters(r_sq,
-        #     channel_description=channel_descriptions,title=effect_name,
-        #     dataSubset=datasubset, num_clusters=5,ax=ax2,for_subplot=True,
-        #     effectLabel='(r^2)',save=False)
-        # ax2 = fig.add_subplot(row, col, 3, projection='3d')
-        # ax2.view_init(elev=30, azim=105, roll=0)
-        # a.runEffectClusters(roc_res,
-        #     channel_description=channel_descriptions,title=effect_name,
-        #     dataSubset=datasubset, num_clusters=5,ax=ax2,for_subplot=True,
-        #     effectLabel='(AUC)',save=False)
-        # sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
-        # sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
-        # a.scatterMetrics(sig_r,sig_d,sig_roc,sig_U) # significant Channels
-        # a.visualizeMetrics(r_sq, d_res,roc_res,U_res,numBins=40) # all channels
-        # a.show()
+        # a.probeSignalQuality('OR_7_8')
+        # a.export_session_EMG()
+        # a.export_epochs(signalType='EMG',fname='emg')
+        pp = False
+        precentral_locations = ['HL7', 'HL8', 'HL9', 'IL13', 'IL14', 'JL12', 'JL13', 'JL14', 'KL7', 'KL8', 'KL9', 'KL10', 'KL11', 'KL12', 'KL13', 'KL14', 'KL15', 'KL16', 'LL4', 'LL5', 'LL6', 'LL7', 'LL8', 'LL9', 'LL10', 'ML3', 'ML4', 'ML5', 'ML8', 'ML9', 'NL11', 'NL12']
+        precentral_locations = [i[:2]+'_'+i[2:] for i in precentral_locations]
+        if pp:
+            r_sq, p_vals, U_res, d_res,roc_res = a.task_power_analysis(saveMAT=True)
+            sig_chans, nonsig_chans, channel_descriptions = a.returnSignificantLocations(p_vals,alpha=0.05)
+            # x = a.cluster_optimization(r_sq,'r_sq',dataSubset=[],close=False,save=True)
+            effect_of_interest = r_sq
+            effect_name = 'r_sq'
+            datasubset = sig_chans
+            datasubset = []
+            a.parse_results_for_triple_responders(effect_of_interest,precentral_locations,save=True,label='precentral')
+            a.parse_results_for_triple_responders(effect_of_interest,sig_chans,save=True,label='significant')
+            a.parse_results_for_triple_responders(effect_of_interest,save=True,label='all')
+            
+            # cluster_res = a.cluster_optimization(effect_of_interest,effect_name,dataSubset=datasubset,close=False,save=True)
+            # a.cluster_permutation(effect_of_interest,effect_name,dataSubset=datasubset, single_scores=cluster_res,save=True)
+            # a.show()
+            # fig = plt.figure(figsize=(20,8))
+            # row = 1; col =1
+            # ax = fig.add_subplot(row, col, 1, projection='3d')
+            # ax.view_init(elev=30, azim=105, roll=0)
+            # a.runEffectClusters(d_res,
+            #     channel_description=channel_descriptions,title=effect_name,
+            #     dataSubset=datasubset, num_clusters=5,ax=ax,
+            #     for_subplot=True,effectLabel='(d)',save=False)
+            # ax2 = fig.add_subplot(row, col, 1, projection='3d')
+            # ax2.view_init(elev=30, azim=105, roll=0)
+            # a.runEffectClusters(r_sq,
+            #     channel_description=channel_descriptions,title=effect_name,
+            #     dataSubset=datasubset, num_clusters=5,ax=ax2,for_subplot=True,
+            #     effectLabel='(r^2)',save=False)
+            # ax2 = fig.add_subplot(row, col, 3, projection='3d')
+            # ax2.view_init(elev=30, azim=105, roll=0)
+            # a.runEffectClusters(roc_res,
+            #     channel_description=channel_descriptions,title=effect_name,
+            #     dataSubset=datasubset, num_clusters=5,ax=ax2,for_subplot=True,
+            #     effectLabel='(AUC)',save=False)
+            # sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
+            # sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
+            # a.scatterMetrics(sig_r,sig_d,sig_roc,sig_U) # significant Channels
+            # a.visualizeMetrics(r_sq, d_res,roc_res,U_res,numBins=40) # all channels
+            # a.show()

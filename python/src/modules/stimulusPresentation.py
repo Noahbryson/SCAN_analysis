@@ -72,6 +72,13 @@ class format_Stimulus_Presentation_Session():
         #         self.muscleMapping = {'1_Hand':['wristExtensor', 'ulnar'], '3_Foot':['TBA'],'2_Tongue':['tongue']}
 
     def getCommonAverages(self):
+        """
+        The function `getCommonAverages` calculates the average values for each signal type across all
+        channels.
+        :return: The `getCommonAverages` method returns a dictionary `common_avg` where the keys are
+        signal types from `self.signalTypes` and the values are the mean values of the data for each
+        signal type across all channels.
+        """
         common_avg = {}
         for sigtype in self.signalTypes:
             temp = []
@@ -133,6 +140,17 @@ class format_Stimulus_Presentation_Session():
         return moveEpochs, restEpochs
     
     def epochStimulusCode_screening(self,plot_states:False):
+        """
+        This function extracts epochs of stimulus codes from the data and categorizes them into task and
+        rest epochs for further analysis.
+        
+        :param plot_states: The `plot_states` parameter in the `epochStimulusCode_screening` function is
+        a boolean parameter that determines whether to plot the stimuli epochs or not. If `plot_states`
+        is set to `True`, the function will call the `plotStimuli` method to visualize the epochs
+        :type plot_states: False
+        :return: The function `epochStimulusCode_screening` returns the dictionary `epochs`, which
+        contains intervals for each stimulus code.
+        """
         data = self.states['StimulusCode']
         epochs = {}
         onset_shift = 0

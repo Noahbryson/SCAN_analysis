@@ -8,7 +8,7 @@ import scipy.stats as stat
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from src.colorOps import colorOps
+from python.src.modules.colorOps import colorOps
 # from SCAN_SingleSessionAnalysis import SCAN_SingleSessionAnalysis
 class compare_sessions():
     def __init__(self,
@@ -351,10 +351,10 @@ if __name__ == '__main__':
     a = compare_sessions(dataPath,subject=subject)
     a.annotate = True
     a.override = False
-    a.analyzeMovements()
-    a.overlay_EMGs()
-    t = [5000,105000]
-    a.overlay_EMGs(sliceVals=t)
-    a.analyze_conditions(export = False,plot=True)
+    # a.analyzeMovements()
+    # a.overlay_EMGs()
+    # t = [5000,105000]
+    # a.overlay_EMGs(sliceVals=t)
+    # a.analyze_conditions(export = False,plot=True)
     plt.show()
 
