@@ -4,8 +4,8 @@ import scipy.stats as st
 import scipy.signal as sig
 from sklearn import decomposition, metrics, cluster,preprocessing
 import pandas as pd
-from functions.stat_methods import cohendsD, mannwhitneyU, signed_cross_correlation
-from functions.filters import sliceArray
+from ..functions.stat_methods import cohendsD, mannwhitneyU, signed_cross_correlation
+from ..functions.filters import sliceArray
 import math
 import distinctipy
 import random

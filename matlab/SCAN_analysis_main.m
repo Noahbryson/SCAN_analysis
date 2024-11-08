@@ -14,7 +14,8 @@ dataDir = sprintf("%s/%s/analyzed",path,session);
 brain = load(sprintf("%s/brain_MNI.mat",brainDir));
 [annotation_remap,cmap,name,name_id] = createColormapFromAnnotations(brain.annotation);
 brain_cmap = vertex_cmap(cmap,annotation_remap);
-target_cmap = parseColorMap(brain.annotation,{'precentral','postcentral','paracentral'});
+% target_cmap = parseColorMap(brain.annotation,{'precentral','postcentral','paracentral'});
+target_cmap = parseColorMap(brain.annotation,{'precentral'});
 target_cmap = vertex_cmap(target_cmap,annotation_remap);
 
 rosa_map = channel_rosa_map('/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/BJH041/channel_rosa_map.csv');
@@ -48,7 +49,7 @@ path = sprintf("C:/Users/nbrys/Box/Brunner Lab/DATA/SCAN_Mayo/%s/gifs",subject);
 % for i=1:3
 % cond = i;
 conditions = r_squared_plots(subject,session,'forVideo',0,'conditionIdx',1,'opacity',20,'full',0,'titleFlag',1); %top view
-fname = sprintf('%s_%s',session,conditions{cond});
+% fname = sprintf('%s_%s',session,conditions{cond});
 % animation3D(path,fname,0,120,3)
 % close all
 % end
@@ -76,17 +77,22 @@ figure(4);
 [BRAIN,tcmap] = sliceBrain(brain,'l',target_cmap);
 precentral = getbrainregion('precentral',BRAIN);
 
-% surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,...
-%     "FaceVertexCData",target_cmap,"FaceColor",'interp',"FaceAlpha",0.05);
-surf = plot3DModel(gca,BRAIN.cortex,BRAIN.annotation.Annotation, ...
-    "FaceVertexCData",tcmap,"FaceColor",'interp',"FaceAlpha",0.15);
 hold on
-plot3DModel(gca,precentral.cortex,precentral.annotation.Annotation,...
-    "FaceVertexCData",precentral.annotation.cmap,"FaceAlpha",0.5);
-
-view(-90,15)
-
+ax = gca; 
+Ax.Color = 'k';
+% surf = plot3DModel(ax,brain.cortex,brain.annotation.Annotation,...
+%     "FaceVertexCData",target_cmap,"FaceColor",[0.2,0.2,0.2]*3,"FaceAlpha",.1);
+surf = plot3DModel(gca,BRAIN.cortex,BRAIN.annotation.Annotation, ...
+    "FaceVertexCData",tcmap,"FaceColor",'interp',"FaceAlpha",0.1);
+% plot3DModel(gca,precentral.cortex,precentral.annotation.Annotation,...
+%     "FaceVertexCData",precentral.annotation.cmap,"FaceAlpha",1);
+plot3DModel(ax,precentral.cortex,precentral.annotation.Annotation,...
+    "FaceColor",[0 81 255]/255,"FaceAlpha",1);
+set(gca,'color',[0 0 0 ]);
 hold off
+view(-90,0)
+
+
 %%
 close all
 plot3DModel(gca,precentral.cortex,precentral.annotation.Annotation,"FaceVertexCData",precentral.annotation.cmap,"FaceAlpha",0.15);

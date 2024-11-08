@@ -4,10 +4,10 @@
 
 close all
 clear 
-loadBCI2kTools;
-Subject = 'SLCH020'; % String of Subject Name
+BCI2KPath = '/Users/nkb/Documents/NCAN/BCI2000tools';
+bci2ktools(BCI2KPath);Subject = 'BJH062'; % String of Subject NameSubject = 'BJH058'; % String of Subject Name
 user = expanduser('~'); % Get local path for interoperability on different machines, function in my tools dir. 
-DataPath = sprintf("%s/Box/Brunner Lab/DATA/SCAN_Mayo/%s",user,Subject); % Path to data
+DataPath = sprintf("%s/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/%s",user,Subject); % Path to data
 checkDir(DataPath); % check if data dir exists
 agg_dir = sprintf('%s/aggregate',DataPath);
 save_dir =sprintf('%s/aggregate/preprocessed',DataPath);

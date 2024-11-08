@@ -62,17 +62,17 @@ class SCAN_group_analysis():
                         ax[i][2].errorbar(t,np.average(c1,axis=0),yerr=np.std(c1,axis=0),color=c,label='_',capsize=4)
                         ax[i][1].scatter(t,np.average(b1,axis=0),color=c,label=muscle)
                         ax[i][2].scatter(t,np.average(c1,axis=0),color=c,label=muscle)
-            #       ax[i][0].set_ylabel('Change in Isolation Index')
-            #       ax[i][1].set_ylabel('Isolation Index')
-            #       ax[i][2].set_ylabel('Isolation Index')
-            #       ax[i][0].set_title(f'{b} Change in Isolation Index')
-            #       ax[i][1].set_title(f'{b} Pre-RFA Isolation Index')
-            #       ax[i][2].set_title(f'{b} Post-RFA Isolation Index')
-            # ax[-1][0].set_xlabel('Time (s)')
-            # ax[-1][2].set_xlabel('Time (s)')
-            # ax[-1][1].set_xlabel('Time (s)')
-            # for a in ax.flat:
-            #       a.legend()
+                  ax[i][0].set_ylabel('Change in Isolation Index')
+                  ax[i][1].set_ylabel('Isolation Index')
+                  ax[i][2].set_ylabel('Isolation Index')
+                  ax[i][0].set_title(f'{b} Change in Isolation Index')
+                  ax[i][1].set_title(f'{b} Pre-RFA Isolation Index')
+                  ax[i][2].set_title(f'{b} Post-RFA Isolation Index')
+            ax[-1][0].set_xlabel('Time (s)')
+            ax[-1][2].set_xlabel('Time (s)')
+            ax[-1][1].set_xlabel('Time (s)')
+            for a in ax.flat:
+                  a.legend()
             
             return 0            
             

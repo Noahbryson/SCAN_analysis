@@ -1,9 +1,11 @@
 %% Setup
 close all
-loadBCI2kTools;
-Subject = 'SLCH020'; % String of Subject Name
+BCI2KPath = '/Users/nkb/Documents/NCAN/BCI2000tools';
+addpath(genpath('/Users/nkb/Documents/NCAN/code/SCAN_analysis/matlab'))
+bci2ktools(BCI2KPath);Subject = 'BJH062'; % String of Subject Name
 user = expanduser('~'); % Get local path for interoperability on different machines, function in my tools dir. 
-DataPath = sprintf("%s/Box/Brunner Lab/DATA/SCAN_Mayo/%s",user,Subject); % Path to data
+DataPath = sprintf("%s/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/%s",user,Subject); % Path to data
+
 checkDir(DataPath); % check if data dir exists
 % Load Data and Metadata
 channels = loadElectrodeChannels(DataPath); % channel discription in parent subject directory, encodes they type and name of each channel
@@ -14,9 +16,11 @@ dataLocs = parseDir(dirContents,tgtFile,'beans');
 
 
 % adjust this index for run number
-pathName = dataLocs{2}; % select file wanted if multiple runs of this experiment (ie pre and post ablation), alphabetical order
+pathName = dataLocs{1}; % select file wanted if multiple runs of this experiment (ie pre and post ablation), alphabetical order
 
+for i = 1:length(dataLocs)
 
+pathName = dataLocs{i};
 tDir = sprintf('%s/%s',DataPath,pathName); % path to specific session
 files = dir(tDir); % file list
 fname = parseDir(files,'dat','_');
@@ -43,13 +47,13 @@ test = writeChannelDescriptions(saveDir,keys,type,1); % write channel decription
 states = writeStates2MAT(saveDir,states); % write states as a structure to .mat (v7.0) files
 writeStimuliCodes(parms,saveDir) % write stimuli code parm as a structure to .mat (v7.0) files -> will eventually reshape and encode other metadata like sampling rate
 writeMATwithHeader(saveDir,Subject,data,keys,1); % write labeled data as a structure to .mat (v7.0) files
-
+end
 
 
 function channels = loadElectrodeChannels(dir)
     fname = sprintf("%s/channels.csv",dir);
-    otps = detectImportOptions(fname);
-    channels = readtable(fname,otps);
+    % otps = detectImportOptions(fname);
+    channels = readtable(fname);
 end
 
 

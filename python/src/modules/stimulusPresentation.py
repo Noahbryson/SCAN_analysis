@@ -3,7 +3,7 @@ import h5py
 from pathlib import Path
 import scipy.io as scio
 import scipy.stats as stats
-from functions.filters import *
+from ..functions.filters import *
 import pickle
 import pandas as pd 
 import re
@@ -44,9 +44,18 @@ class format_Stimulus_Presentation_Session():
                     self.data = data
                     print(0)
 
-                else:    
-                    data = scio.loadmat(loc/file,mat_dtype=True,simplify_cells=True)
-                    self.data = data['signals']
+                else:
+                    try:    
+                        data = scio.loadmat(loc/file,mat_dtype=True,simplify_cells=True)
+                        self.data = data['signals']
+                    except NotImplementedError:
+                        data = {}
+                        hf = h5py.File(loc/file,'r')
+                        temp = hf['signals']
+                        keys = list(temp.keys())
+                        for k in keys:
+                            data[k] = temp[k][0]
+                        self.data = data
             elif file.find('channeltypes')>-1:
                 channels = scio.loadmat(loc/file,mat_dtype=True,simplify_cells=True)
                 self.channels = channels['chan_types']
@@ -63,7 +72,8 @@ class format_Stimulus_Presentation_Session():
                 print(f'{file} not loaded on init')
         temp = {k:self.channels[k] for k in self.data.keys()}
         self.channels = temp
-        self.signalTypes = set(self.channels.values())
+        signalTypes = set(self.channels.values())
+        self.signalTypes = [i for i in signalTypes if i.find('NA')<0]
         # if os.path.exists(self.main_dir/self.subject/'muscle_mapping.csv'):
         #         with open(self.main_dir/self.subject/'muscle_mapping.csv', 'r') as fp:
         #             reader = csv.reader(fp)

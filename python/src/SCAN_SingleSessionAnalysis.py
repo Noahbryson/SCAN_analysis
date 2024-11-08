@@ -4,16 +4,16 @@ from pathlib import Path
 import scipy.io as scio
 import scipy.stats as stats
 import pandas as pd
-from functions.filters import *
+from .functions.filters import *
 import distinctipy
 import math
 import pickle
 import seaborn as sns
 from sklearn import metrics
 from sklearn.cluster import KMeans
-from functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, geometric_mean,kde,euclidean_distance, signed_cross_correlation, angle_3D, angle_distances_3D
-from modules.stimulusPresentation import format_Stimulus_Presentation_Session
-from modules.response_datastructs import ERP_struct, export_ERP_Obj
+from .functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, geometric_mean,kde,euclidean_distance, signed_cross_correlation, angle_3D, angle_distances_3D
+from .modules.stimulusPresentation import format_Stimulus_Presentation_Session
+from .modules.response_datastructs import ERP_struct, export_ERP_Obj
 
 class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
     def __init__(self,path:str or Path,subject:str,sessionID:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False,gammaRange=[65,115],refType: str='common',remove_trajectories:list[str]=[]) -> None: # type: ignore
@@ -1177,7 +1177,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         # plt.grid(visible=False)
         # sns.despine()
         
-        distinctipy.color_swatch(cmap)
+        # distinctipy.color_swatch(cmap)
         print(cluster_dist)
         print(cluster_angle_difference)
         return ax,threshDict
@@ -1260,7 +1260,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                 else:
                     out[c] = temp
         return out
-    def parse_results_for_triple_responders(self,result:dict,dataSubset:list=[],save:bool=False, label = 'all'):
+    def parse_results_for_triple_responders(self,result:dict,dataSubset:list=[],save:bool=False, label = 'all',thresh=0.15):
         result = self.reshapeEffect(result)
         if len(dataSubset) > 0:
             # print('parsing via keys')
@@ -1274,14 +1274,14 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         arrayMap = {0:hand,1:foot,2:face}
         for i,j in result.items():
             data = np.array([v for v in j.values()])
-            if (data > 0.15).all():
+            if (data > thresh).all():
                 inter.append(i)
-            elif (data > 0.15).any():
-                if data[0] > 0.15 and (data[1:]<0.15).all():
+            elif (data > thresh).any():
+                if data[0] > thresh and (data[1:]<thresh).all():
                     hand.append(i)
-                elif data[1] > 0.15 and data[0] <0.15 and data[2] <0.15:
+                elif data[1] > thresh and data[0] <thresh and data[2] <thresh:
                     foot.append(i)
-                elif data[2] > 0.15 and (data[:2]<0.15).all():
+                elif data[2] > thresh and (data[:2]<thresh).all():
                     face.append(i)
                 else:
                     arrayMap[np.argmax(data)].append(i)                    
@@ -1404,62 +1404,54 @@ if __name__ == '__main__':
         dataPath = userPath / r"Box\Brunner Lab\DATA\SCAN_Mayo"
     else:
         dataPath = userPath/"Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo"
-    subject = 'BJH041'
-    sessions = ['pre_ablation']
-    sessions = ['post_ablation']
-    sessions = ['pre_ablation','post_ablation']
-
-    # session = 'aggregate'
+    subject = 'SLCH020'
+    # sessions = ['pre_ablation']
+    # sessions = ['post_ablation']
+    # sessions = ['pre_ablation','post_ablation']
     gammaRange = [70,170]
-    for session in sessions:
-        a = SCAN_SingleSessionAnalysis(dataPath,subject,session,remove_trajectories=['OR'],
+    # for session in sessions:
+    session = 'aggregate'
+    if True:
+        a = SCAN_SingleSessionAnalysis(dataPath,subject,session,remove_trajectories=[],
                 load=True,plot_stimuli=False,gammaRange=gammaRange,refType='common')
-        a.extractAllERPs(plot=True,show=False,save=True,close=True,gamma=True,beta=False,mu=False)
-        a.run_coactivation(save=True,plot=False)
+        fig = plt.figure(figsize=(20,8))
+        row = 1; col =1
+        r_sq, p_vals, U_res, d_res,roc_res = a.task_power_analysis(saveMAT=True)
+        sig_chans, nonsig_chans, channel_descriptions = a.returnSignificantLocations(p_vals,alpha=0.05)
+        # x = a.cluster_optimization(r_sq,'r_sq',dataSubset=[],close=False,save=True)
+        effect_of_interest = r_sq
+        effect_name = 'r_sq'
+        datasubset = sig_chans
+        datasubset = []
+        ax2 = fig.add_subplot(row, col, 1, projection='3d')
+        ax2.view_init(elev=30, azim=105, roll=0)
+        a.runEffectClusters(r_sq,
+            channel_description=channel_descriptions,title=effect_name,
+            dataSubset=datasubset, num_clusters=5,ax=ax2,for_subplot=True,
+            effectLabel='(r^2)',save=False)
+        # a.extractAllERPs(plot=True,show=False,save=True,close=True,gamma=True,beta=False,mu=False)
+        # a.run_coactivation(save=True,plot=False)
         # a.show()
         # a.probeSignalQuality('OR_7_8')
         # a.export_session_EMG()
         # a.export_epochs(signalType='EMG',fname='emg')
-        pp = False
-        precentral_locations = ['HL7', 'HL8', 'HL9', 'IL13', 'IL14', 'JL12', 'JL13', 'JL14', 'KL7', 'KL8', 'KL9', 'KL10', 'KL11', 'KL12', 'KL13', 'KL14', 'KL15', 'KL16', 'LL4', 'LL5', 'LL6', 'LL7', 'LL8', 'LL9', 'LL10', 'ML3', 'ML4', 'ML5', 'ML8', 'ML9', 'NL11', 'NL12']
-        precentral_locations = [i[:2]+'_'+i[2:] for i in precentral_locations]
+        
+        # precentral_locations = ['HL7', 'HL8', 'HL9', 'IL13', 'IL14', 'JL12', 'JL13', 'JL14', 'KL7', 'KL8', 'KL9', 'KL10', 'KL11', 'KL12', 'KL13', 'KL14', 'KL15', 'KL16', 'LL4', 'LL5', 'LL6', 'LL7', 'LL8', 'LL9', 'LL10', 'ML3', 'ML4', 'ML5', 'ML8', 'ML9', 'NL11', 'NL12']
+        # precentral_locations = [i[:2]+'_'+i[2:] for i in precentral_locations]
+        
+        pp = True
         if pp:
-            r_sq, p_vals, U_res, d_res,roc_res = a.task_power_analysis(saveMAT=True)
-            sig_chans, nonsig_chans, channel_descriptions = a.returnSignificantLocations(p_vals,alpha=0.05)
-            # x = a.cluster_optimization(r_sq,'r_sq',dataSubset=[],close=False,save=True)
-            effect_of_interest = r_sq
-            effect_name = 'r_sq'
-            datasubset = sig_chans
-            datasubset = []
-            a.parse_results_for_triple_responders(effect_of_interest,precentral_locations,save=True,label='precentral')
-            a.parse_results_for_triple_responders(effect_of_interest,sig_chans,save=True,label='significant')
-            a.parse_results_for_triple_responders(effect_of_interest,save=True,label='all')
+            
+            # a.parse_results_for_triple_responders(effect_of_interest,precentral_locations,save=True,label='precentral')
+            a.parse_results_for_triple_responders(effect_of_interest,sig_chans,save=True,label='significant',thresh=0.1)
+            a.parse_results_for_triple_responders(effect_of_interest,save=True,label='all',thresh=0.1)
             
             # cluster_res = a.cluster_optimization(effect_of_interest,effect_name,dataSubset=datasubset,close=False,save=True)
             # a.cluster_permutation(effect_of_interest,effect_name,dataSubset=datasubset, single_scores=cluster_res,save=True)
             # a.show()
-            # fig = plt.figure(figsize=(20,8))
-            # row = 1; col =1
-            # ax = fig.add_subplot(row, col, 1, projection='3d')
-            # ax.view_init(elev=30, azim=105, roll=0)
-            # a.runEffectClusters(d_res,
-            #     channel_description=channel_descriptions,title=effect_name,
-            #     dataSubset=datasubset, num_clusters=5,ax=ax,
-            #     for_subplot=True,effectLabel='(d)',save=False)
-            # ax2 = fig.add_subplot(row, col, 1, projection='3d')
-            # ax2.view_init(elev=30, azim=105, roll=0)
-            # a.runEffectClusters(r_sq,
-            #     channel_description=channel_descriptions,title=effect_name,
-            #     dataSubset=datasubset, num_clusters=5,ax=ax2,for_subplot=True,
-            #     effectLabel='(r^2)',save=False)
-            # ax2 = fig.add_subplot(row, col, 3, projection='3d')
-            # ax2.view_init(elev=30, azim=105, roll=0)
-            # a.runEffectClusters(roc_res,
-            #     channel_description=channel_descriptions,title=effect_name,
-            #     dataSubset=datasubset, num_clusters=5,ax=ax2,for_subplot=True,
-            #     effectLabel='(AUC)',save=False)
+            
             # sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
-            # sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
-            # a.scatterMetrics(sig_r,sig_d,sig_roc,sig_U) # significant Channels
+            
             # a.visualizeMetrics(r_sq, d_res,roc_res,U_res,numBins=40) # all channels
-            # a.show()
+        
+        # a.show()
