@@ -12,10 +12,19 @@ import random
 from typing import List
 import pickle
 from pathlib import Path
+import os
 
 
 class ERP_struct():
       def __init__(self,data,filterband,power,fs):
+            """__init__ _summary_
+
+            Args:
+                data (dict): input data with keys as the trial type resulting in a list like structure of dictionaries. 0 index is the avgs of the data, 1 index is stdev and 2 index is average. 
+                filterband (list): lowcut and highcut for ERP
+                power (bool): flag to do a power analysis or just raw voltage
+                fs (float): sampling rate of the system
+            """
             self.filterband = filterband
             self.fs=fs
             if power:
@@ -70,7 +79,7 @@ class ERP_struct():
             return res
       
       
-      def plotAverages_per_trajectory(self,subject,timeLag:float=1)->List[plt.Figure]:
+      def plotAverages_per_trajectory(self,subject,timeLag:float=1,savePath:Path=False)->List[plt.Figure]:
             figs = []
             for k,v in self.mapping.items():
                   numChan = len(v)
@@ -87,12 +96,11 @@ class ERP_struct():
                   for i,(vals,ax) in enumerate(zip(data,fig.axes)):
                         keys = list(vals.keys())
                         statPlot = np.array([[a,-1] for a,y in zip(stattime,stats[i].pvalue) if y <=0.05]).reshape(-1,2).T
-                        
-                        t = np.linspace(-timeLag,len(vals[keys[0]][0])/self.fs-timeLag,len(vals[keys[0]][0]))                        
                         # a.set_visible(True)
                         for j,p in enumerate(keys):
+                              t = np.linspace(-timeLag,len(vals[p][0])/self.fs-timeLag,len(vals[p][0]))
                               ax.plot(t,vals[p][0], label=p,color=self.cs[j])
-                              plot_range_on_curve(t,vals[p][0],vals[keys[2]][1],ax,color=self.cs[j])
+                              plot_range_on_curve(t,vals[p][0],vals[p][1],ax,color=self.cs[j])
                         ax.scatter(statPlot[0],statPlot[1], color=(0,0,0))
                         ax.legend()
                         ax.set_title(v[i])
@@ -110,6 +118,12 @@ class ERP_struct():
                         else:
                               a.set_xlabel('time (s)')
                   figs.append(figname)
+                  if savePath:
+                        outDir = verifyDir(savePath/'png')
+                        plt.savefig(outDir / f'{figname}.png')
+                        outDir = verifyDir(savePath/'svg')
+                        plt.savefig(outDir / f'{figname}.svg')
+                        plt.close()
             return figs
       
       def emg_isolation(self,subject,task_mapping,timeLag:float=1,save:bool=False, plot: bool=False,figPath = '', dataPath =''):
@@ -211,15 +225,17 @@ def plot_range_on_curve(t,curve, bounds, ax:plt.axes,color):
 
 
 class spectrumResponses():
-      def __init__(self,data:dict, fs:int, normalizingDict:dict, filterband:list = [70,170]) -> None:
+      def __init__(self,data:dict, fs:int, normalizingDict:dict, fpath:Path,recordingType: str,save: bool,filterband:list = [70,170]) -> None:
             self.filterband = filterband
             self.data = data
+            self.recordingType = recordingType
             self.fs = fs
+            self.save = save
             self.windowProportion = 0.5#multiply by data len during pwelch for proportion of data.
             taskPSDs = self._computeSpectrograms(normalDict=normalizingDict)
             tasks = [i for i in taskPSDs.keys()]
             self.psdDf = self._makeDataFrame(taskPSDs)
-            self.taskRes = self.getTaskResults(self.psdDf,tasks)
+            self.taskRes = self.getTaskResults(self.psdDf,tasks,fpath)
 
 
       def _makeDataFrame(self,taskPSDs:dict):
@@ -238,7 +254,7 @@ class spectrumResponses():
             df['norm_gamma'] = df.apply(lambda x: np.mean(sliceArray(x['normPSD'],self.filterband)),axis=1)
             return df
 
-      def getTaskResults(self,taskDf:pd.DataFrame, tasks):
+      def getTaskResults(self,taskDf:pd.DataFrame, tasks,fpath):
             channels = set(taskDf['Channel'].to_list())
             output = []
             columns = ['channel','task','rsq','d','U','p']
@@ -253,6 +269,10 @@ class spectrumResponses():
                         res = mannwhitneyU(m,r)
                         output.append([c,task,r_sq,d,res.statistic,res.pvalue])
             df=pd.DataFrame(output,columns=columns)
+            if not os.path.exists(fpath):
+                  os.makedirs(fpath) 
+            if self.save:
+                  df.to_csv(fpath/f'{self.recordingType}_powerRes.csv')
             return df
 
       def getChannelOutcomes(self,significant: bool=False, alpha = 0.05):
@@ -467,3 +487,7 @@ def load_ERP_Obj(fpath):
       with open(fpath, 'rb') as fp:
             x = pickle.load(fp)
       return x             
+def verifyDir(target_dir):
+      if not(os.path.exists(target_dir)):
+            os.mkdir(target_dir)  
+      return target_dir

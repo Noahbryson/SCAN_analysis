@@ -3,16 +3,16 @@ import csv
 from pathlib import Path
 import scipy.io as scio
 import pandas as pd
-from functions.filters import *
+from .functions.filters import *
 import math
 import pickle
 import seaborn as sns
 from sklearn import metrics
 from sklearn.cluster import KMeans
-from functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, geometric_mean
-from python.src.modules.stimulusPresentation import screening_session, format_Stimulus_Presentation_Session, sliceArray
-from python.src.modules.response_datastructs import ERP_struct, spectrumResponses
-from SCAN_SingleSessionAnalysis import readPickle, writePickle, alphaSortDict
+from .functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, geometric_mean
+from .modules.stimulusPresentation import screening_session, format_Stimulus_Presentation_Session, sliceArray
+from .modules.response_datastructs import ERP_struct, spectrumResponses, verifyDir
+from .SCAN_SingleSessionAnalysis import readPickle, writePickle, alphaSortDict
 
 class screening_analysis(screening_session):
 
@@ -55,27 +55,62 @@ class screening_analysis(screening_session):
         super().__init__(self.subjectDir, subject, plot_stimuli=plot_stimuli, HDF=True)
         self.saveRoot = self.subjectDir / 'analyzed'
         self.gammaRange = gammaRange
+        self.load = load
+        self.rerefSEEG = rerefSEEG
         self.sensorimotor.epoch_info = self.sensorimotor.epochStimulusCode_screening(plot_states=plot_stimuli)
         self.motor.epoch_info = self.motor.epochStimulusCode_screening(plot_states=plot_stimuli)
         self.sensory.epoch_info = self.sensory.epochStimulusCode_screening(plot_states=plot_stimuli)
-        self.motor.data = self._processSignals(self.motor,load=load,rerefSEEG=rerefSEEG)
-        self.sensorimotor.data = self._processSignals(self.sensorimotor,load=load,rerefSEEG=rerefSEEG)
-        self.sensory.data = self._processSignals(self.sensory,load=load,rerefSEEG=rerefSEEG)
+        
         print('end init')  
 
-    def compareTaskSpectra(self,recordingType: str=''):
+    def extractSensoryResponses(self,save: Path=False,metric:str = 'rsq'):
+        sm = self.compareTaskSpectra('sm')
+        hand = self.compareTaskSpectra('sensory')
+        df = pd.concat([sm.taskRes, hand.taskRes])
+        targetKeys = ['tickle chin!','listen carefully!','pinky','ring','index','middle','thumb']
+        # targetData = df[df['task' == targetKeys]]
+        targetData = df[df['task'].isin(targetKeys)]
+        channels = list(df['channel'])
+        channels = [i for i in channels if i.upper().find('REF')<0]
+        targetData = targetData[targetData['channel'].isin(channels)].copy()
+        if save:
+            os.makedirs(save,exist_ok=True)
+            targetData.to_csv(save/'agg_sensory_responses.csv')
+        parsedTargetData = {}
+        targetData.rename(columns={metric:'metric'},inplace=True)
+        for i in targetKeys:
+            parsedTargetData[i] = targetData[['channel','metric','p']].loc[targetData['task']== i]
+        parsedTargetData
+        return parsedTargetData
+    
+    def __loadMotor(self):
+        if not self.motor.processFlag:
+            self.motor.data = self._processSignals(self.motor,load=self.load,rerefSEEG=self.rerefSEEG)
+    def __loadSensory(self):
+        if not self.sensory.processFlag:
+            self.sensory.data = self._processSignals(self.sensory,load=self.load,rerefSEEG=self.rerefSEEG)
+    def __loadSM(self):
+        if not self.sensorimotor.processFlag:
+            self.sensorimotor.data = self._processSignals(self.sensorimotor,load=self.load,rerefSEEG=self.rerefSEEG)
+        
+    
+    
+    def compareTaskSpectra(self,recordingType: str='',save=False):
         match recordingType:
             case "motor":
+                self.__loadMotor()
                 data = self.motor.data
                 task_epochs = self.motor.task_epochs
                 rest_epochs = self.motor.rest_epochs
                 normalizingDict = self._globalPSD_normalize(self.motor)
             case 'sensory':
+                self.__loadSensory()
                 data = self.sensory.data
                 task_epochs = self.sensory.task_epochs
                 rest_epochs = self.sensory.rest_epochs
                 normalizingDict = self._globalPSD_normalize(self.sensory)
             case 'sm':
+                self.__loadSM()
                 data = self.sensorimotor.data
                 task_epochs = self.sensorimotor.task_epochs
                 rest_epochs = self.sensorimotor.rest_epochs
@@ -101,8 +136,7 @@ class screening_analysis(screening_session):
                         task_signals[sigType] = channel_task
                         rest_signals[sigType] = channel_rest
                 epochs[k] = {'task':task_signals, 'rest':rest_signals}
-        res = spectrumResponses(epochs,self.fs,normalizingDict)
-        res.clusterChannels()
+        res = spectrumResponses(epochs,self.fs,normalizingDict,self.saveRoot/recordingType/'power',recordingType,save)
         return res 
     def _globalPSD_normalize(self,dataObj:format_Stimulus_Presentation_Session, channel_norm:bool=True):
         """
@@ -141,7 +175,7 @@ class screening_analysis(screening_session):
             out = {k:avg for k in keys}
         return out
 
-    def extractERPs(self,recordingType:str,timeLag: float=2)-> dict:
+    def extractERPs(self,recordingType:str,timeLag: float=2,save: bool=True)-> dict:
         """Extracts ERP epochs based on the type of recording specified (motor or sensory).
         
         Parameters
@@ -159,12 +193,15 @@ class screening_analysis(screening_session):
         """
         match recordingType:
             case "motor":
+                self.__loadMotor()
                 data = self.motor.data
                 ERP_epochs = self._epochERPs(self.motor, timeLag=timeLag)
             case 'sensory':
+                self.__loadSensory()
                 data = self.sensory.data
                 ERP_epochs = self._epochERPs(self.sensory,timeLag=timeLag)
             case 'sm':
+                self.__loadSM()
                 data = self.sensorimotor.data
                 ERP_epochs = self._epochERPs(self.sensorimotor,timeLag=timeLag)
 
@@ -181,8 +218,14 @@ class screening_analysis(screening_session):
                         signals[sigType] = channel
                 epochs[k] = signals
         gammaERP = self.highGamma_ERP(epochs)
-        gammaERP.plotAverages_per_trajectory(self.subject)
-        plt.show()
+        self.recordingType = recordingType
+        if save:
+            verifyDir(self.saveRoot)
+            savePath = self.saveRoot /self.recordingType
+            verifyDir(savePath)
+            savePath = self.saveRoot /self.recordingType/ 'ERP'
+            verifyDir(savePath)
+        gammaERP.plotAverages_per_trajectory(self.subject,savePath=savePath)
         return epochs
 
     def _epochERPs(self,session:format_Stimulus_Presentation_Session,timeLag:float=2)-> dict:
@@ -206,7 +249,11 @@ class screening_analysis(screening_session):
         timelag = self.fs * timeLag
         for i,j in epoch_info.items():
             if i.find('stop')<0:
-                epochs[i] = [[p[0]-timelag,p[1]+timelag] for p in j]
+                if np.isscalar(j[0]):
+                    p=j
+                    epochs[i] = [[p[0]-timelag,p[1]+timelag]]
+                else:
+                    epochs[i] = [[p[0]-timelag,p[1]+timelag] for p in j]
         return epochs
 
     def highGamma_ERP(self,data,power: bool=True)-> ERP_struct:
@@ -284,6 +331,7 @@ class screening_analysis(screening_session):
                 out[k] = dataObj.data[k]
         return out
     def _processSignals(self,dataObj:format_Stimulus_Presentation_Session,load=True,rerefSEEG=''):
+        self.proccessFlag = True
         fname = f'{rerefSEEG}_processed.pkl'
         if fname in os.listdir(dataObj.root / 'preprocessed') and load==True:
             signalGroups = readPickle(dataObj.root / 'preprocessed' /fname)
@@ -366,7 +414,7 @@ class screening_analysis(screening_session):
                     data = [v for k, v in sEEG.items() if k.find(traj) > -1]
                     traj_data = {}
                     for idx, vals in enumerate(data[0:-1]):
-                        label = f"{traj}_{idx+1}_{idx+2}"
+                        label = f"{traj}{idx+1}_{idx+2}"
                         temp = self._bipolarReference(data[idx + 1], vals)
                         # temp = notch(temp,self.fs,60,30,1)
                         traj_data[label] = temp
@@ -395,17 +443,3 @@ class screening_analysis(screening_session):
     def _bipolarReference(self,a,b):
         return b-a 
 
-if __name__ == '__main__':
-    import platform
-    localEnv = platform.system()
-    userPath = Path(os.path.expanduser('~'))
-    if localEnv == 'Windows':
-        dataPath = userPath / r"Box\Brunner Lab\DATA\SCREENING"
-    else:
-        dataPath = userPath/"Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCREENING"
-    subject = 'BJH045'
-    gammaRange = [70,170]
-    print(subject)
-    a = screening_analysis(dataPath,subject,load=True,plot_stimuli=False,gammaRange=gammaRange,rerefSEEG='common')
-    a.compareTaskSpectra('motor')
-    a.extractERPs('sensory')

@@ -25,13 +25,10 @@ class format_Stimulus_Presentation_Session():
         self.epoch_info = {} # intialize empty as different experiments have different requirements for this variable.
         self.task_epochs = {}
         self.rest_epochs = {}
+        self.processFlag = False
         for file in files:
             if file.find(subject)>-1:
                 if HDF:
-                    # need to write HDF5 parser. 
-                    # with h5py.File(loc/file, 'r') as f:
-                    #     # data = {key: f[key][()] for key in f.keys()}
-                    #     data = f['agg_signals'][()]
                     data = {}
                     hf = h5py.File(loc/file,'r')
                     try:
@@ -285,7 +282,7 @@ class screening_session(object):
         self.sensory.name = 'sensory'
         self.sensorimotor = format_Stimulus_Presentation_Session(loc/'sensory-motor/preprocessed',subject,plot_stimuli=plot_stimuli,HDF=HDF)
         self.sensorimotor.name = 'sensorimotor'
-
+        
 def extractInterval(intervals,b):
     for i in intervals:
         if i[0] ==b: 
