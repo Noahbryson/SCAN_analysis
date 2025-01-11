@@ -2,20 +2,23 @@
 close all
 addpath('/Users/nkb/Documents/NCAN/code/MATLAB_tools')
 BCI2KPath = '/Users/nkb/Documents/NCAN/BCI2000tools';
-bci2ktools(BCI2KPath);
-Subject = 'BJH041'; % String of Subject Name
+Subject = 'BJH069'; % String of Subject Name
 user = expanduser('~'); % Get local path for interoperability on different machines, function in my tools dir. 
 if ispc
     DataPath = sprintf("%s/Box/Brunner Lab/DATA/SCREENING/%s",user,Subject); % Path to data
+    BCI2KPath = "C:\BCI2000\BCI2000";
 else
     DataPath = sprintf("%s/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCREENING/%s",user,Subject); % Path to data
 end
+bci2ktools(BCI2KPath);
+
 checkDir(DataPath); % check if data dir exists
 % Load Data and Metadata
 channels = loadElectrodeChannels(DataPath); % channel discription in parent subject directory, encodes they type and name of each channel
     
 dirContents = dir(DataPath);
-dataDirs = {'sensory','motor','sensory-motor'};
+% dataDirs = {'sensory','motor','sensory-motor'};
+dataDirs = {'sensory-motor'};
 
 dataLocs = parseDir(dirContents,dataDirs,'.csv');
 

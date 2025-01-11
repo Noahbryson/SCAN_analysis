@@ -15,7 +15,7 @@ if localEnv == 'Windows':
 else:
       dataPath = userPath/"Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCREENING"
      
-subject = 'BJH046'
+subject = 'BJH069'
 
 targetRegions = ['AV','LP','CM','MD','VL','PU','PuM','PuL','PuI','LGN',
                   'MGN','PuA','CL','VM','LP','LD','VA','central']
@@ -25,7 +25,7 @@ side = 'both'
 
 import datetime
 print(f'\n\n {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")} \n\n')
-bipolarFlag = True
+bipolarFlag = False
 brain = PyBrain(fp=dataPath/subject/'brain/brain_MNI.mat',subject=subject,brainName='MNI')
 if bipolarFlag:
       reref = 'bipolar'
@@ -41,7 +41,9 @@ thalamElec, thalamIdx = brain._isolateTargetElectrodes(['AV','LP','CM','MD','VL'
                   'MGN','PuA','CL','VM','LP','LD','VA','central'])
 print(thalamElec)
 
-df = pd.read_csv(dataPath/subject/'analyzed'/'agg_sensory_responses.csv')
+# df = pd.read_csv(dataPath/subject/'analyzed'/'agg_sensory_responses.csv')
+df = pd.read_csv(dataPath/subject/'analyzed'/'sm'/'power'/'sm_powerRes.csv')
+
 metric = 'rsq'
 df.rename(columns={metric:'metric'},inplace=True)
 # responses = {}
@@ -57,11 +59,11 @@ for i,k in enumerate(sorted(set(df['task']))):
             col = 0
       vol.subplot(row,col)
       vol = brain._plotBrainVolume(vol,0.05,color=[1,1,1],side=side)
-      brain._plotEffectOnVolume(vol,data,significant=True,electrodeSubset=thalamIdx,side=side)
+      brain._plotEffectOnVolume(vol,data,significant=True,electrodeSubset=[],side=side)
       vol.add_title(k)
       col = col +1 
-vol.show(auto_close=False,interactive=False)
+vol.show(auto_close=False,interactive=True)
 
-input('run complete? [y|n]:')
+# input('run complete? [y|n]:')
 
-print('run complete')
+# print('run complete')

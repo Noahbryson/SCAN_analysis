@@ -57,9 +57,13 @@ class screening_analysis(screening_session):
         self.gammaRange = gammaRange
         self.load = load
         self.rerefSEEG = rerefSEEG
-        self.sensorimotor.epoch_info = self.sensorimotor.epochStimulusCode_screening(plot_states=plot_stimuli)
-        self.motor.epoch_info = self.motor.epochStimulusCode_screening(plot_states=plot_stimuli)
-        self.sensory.epoch_info = self.sensory.epochStimulusCode_screening(plot_states=plot_stimuli)
+        if self.sensorimotor is not None:
+            self.sensorimotor.epoch_info = self.sensorimotor.epochStimulusCode_screening(plot_states=plot_stimuli)
+        
+        if self.motor is not None:
+            self.motor.epoch_info = self.motor.epochStimulusCode_screening(plot_states=plot_stimuli)
+        if self.sensory is not None:
+            self.sensory.epoch_info = self.sensory.epochStimulusCode_screening(plot_states=plot_stimuli)
         
         print('end init')  
 

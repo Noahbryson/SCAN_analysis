@@ -17,7 +17,7 @@ targetRegions = ['AV','LP','CM','MD','VL','PU','PuM','PuL','PuI','LGN',
 
 
 
-subject = 'BJH046'
+subject = 'BJH069'
 gammaRange = [70,170]
 import datetime
 print(f'\n\n {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")} \n\n')
@@ -28,7 +28,7 @@ print(f'\n\n {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")} \n\n')
 # """End Testing Block"""
 
 
-bipolarFlag = True
+bipolarFlag = False
 brain = PyBrain(fp=dataPath/subject/'brain/brain_MNI.mat',subject=subject,brainName='MNI')
 if bipolarFlag:
       reref = 'bipolar'
@@ -47,7 +47,7 @@ print(thalamElec)
 # v1=brain._ColorBrainRegion(v1,)
 
 a = screening_analysis(dataPath,subject,load=True,plot_stimuli=False,gammaRange=gammaRange,rerefSEEG=reref)
-# a.compareTaskSpectra('sm',save=True)
+a.compareTaskSpectra('sm',save=True)
 # a.compareTaskSpectra('sensory',save=True)
 # a.extractERPs('sensory')
 # a.extractERPs('sm',save=True)

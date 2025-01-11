@@ -276,12 +276,24 @@ class screening_session(object):
         
     def __init__(self, loc:Path,subject:str,plot_stimuli: bool=False, HDF:bool=True):
         super(screening_session, self).__init__()
-        self.motor =        format_Stimulus_Presentation_Session(loc/'motor/preprocessed',subject,plot_stimuli=plot_stimuli,HDF=HDF)
-        self.motor.name = 'motor'
-        self.sensory =      format_Stimulus_Presentation_Session(loc/'sensory/preprocessed',subject,plot_stimuli=plot_stimuli,HDF=HDF)
-        self.sensory.name = 'sensory'
-        self.sensorimotor = format_Stimulus_Presentation_Session(loc/'sensory-motor/preprocessed',subject,plot_stimuli=plot_stimuli,HDF=HDF)
-        self.sensorimotor.name = 'sensorimotor'
+        if os.path.exists(loc/'motor/preprocessed'):
+            self.motor =        format_Stimulus_Presentation_Session(loc/'motor/preprocessed',subject,plot_stimuli=plot_stimuli,HDF=HDF)
+            self.motor.name = 'motor'
+        else:
+            self.motor = None
+        if os.path.exists(loc/'sensory/preprocessed'):
+            self.sensory =      format_Stimulus_Presentation_Session(loc/'sensory/preprocessed',subject,plot_stimuli=plot_stimuli,HDF=HDF)
+            self.sensory.name = 'sensory'
+        else:
+            self.sensory = None
+        if os.path.exists(loc/'sensory-motor/preprocessed'):
+            self.sensorimotor =        format_Stimulus_Presentation_Session(loc/'sensory-motor/preprocessed',subject,plot_stimuli=plot_stimuli,HDF=HDF)
+            self.sensorimotor.name = 'sensorimotor'
+        else:
+            self.sensorimotor = None
+        
+        
+        
         
 def extractInterval(intervals,b):
     for i in intervals:
