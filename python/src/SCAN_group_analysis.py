@@ -4,15 +4,16 @@ from pathlib import Path
 import scipy.io as scio
 import scipy.stats as stats
 import pandas as pd
-from functions.filters import *
+from .functions.filters import *
+import matplotlib.patches as patch
 import distinctipy
 import math
 import pickle
 import seaborn as sns
 from sklearn import metrics
 from sklearn.cluster import KMeans
-from functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, geometric_mean,kde,euclidean_distance, signed_cross_correlation, angle_3D, angle_distances_3D
-from modules.response_datastructs import ERP_struct, export_ERP_Obj, load_ERP_Obj
+from .functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, geometric_mean,kde,euclidean_distance, signed_cross_correlation, angle_3D, angle_distances_3D
+from .modules.response_datastructs import ERP_struct, export_ERP_Obj, load_ERP_Obj
 
 class SCAN_group_analysis():
       def __init__(self, dataDir:Path, subjectList: list):
@@ -42,7 +43,7 @@ class SCAN_group_analysis():
             baseline = self.EMG_isolation[session1]
             compare = self.EMG_isolation[session2]
             rows = len(baseline)
-            cols = 3
+            cols = 4
             colors = {i:j for i,j in zip(baseline,self.colorPalletBest[1:])}
             fig, ax = plt.subplots(rows,cols, sharex=True,sharey=True)
             for i,b in enumerate(baseline):
@@ -62,17 +63,23 @@ class SCAN_group_analysis():
                         ax[i][2].errorbar(t,np.average(c1,axis=0),yerr=np.std(c1,axis=0),color=c,label='_',capsize=4)
                         ax[i][1].scatter(t,np.average(b1,axis=0),color=c,label=muscle)
                         ax[i][2].scatter(t,np.average(c1,axis=0),color=c,label=muscle)
+                        circle = patch.Circle((0,0.5-j),radius=0.4,color=c)
+                        ax[i][3].add_patch(circle)
+                        ax[i][3].annotate(muscle,(1,0.5-j))
+                        # ax[i][3].set_xlim(-0.1,1)
+                        # ax[i][3].set_ylim(-1,1)
                   ax[i][0].set_ylabel('Change in Isolation Index')
                   ax[i][1].set_ylabel('Isolation Index')
                   ax[i][2].set_ylabel('Isolation Index')
                   ax[i][0].set_title(f'{b} Change in Isolation Index')
                   ax[i][1].set_title(f'{b} Pre-RFA Isolation Index')
                   ax[i][2].set_title(f'{b} Post-RFA Isolation Index')
+                  ax[i][3].set_title('Color Legend')
             ax[-1][0].set_xlabel('Time (s)')
             ax[-1][2].set_xlabel('Time (s)')
             ax[-1][1].set_xlabel('Time (s)')
-            for a in ax.flat:
-                  a.legend()
+            # for a in ax.flat:
+                  # a.legend()
             
             return 0            
             
@@ -85,22 +92,6 @@ class SCAN_group_analysis():
                   with open(fpath, 'rb') as fp:
                         x = pickle.load(fp)
                   self.EMG_isolation[k] = x
-
-
-
-if __name__ == "__main__":
-      subjects = ['BJH041_pre_ablation','BJH041_post_ablation']
-      import platform
-      localEnv = platform.system()
-      userPath = Path(os.path.expanduser('~'))
-      if localEnv == 'Windows':
-            dataPath = userPath / r"Box\Brunner Lab\DATA\SCAN_Mayo"
-      else:
-            dataPath = userPath/"Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo"
-      a = SCAN_group_analysis(dataPath/'Aggregate',subjects)
-      a.compare_EMG_isolation(subjects[0],subjects[1])
-      a.LoadERPs()
-      plt.show()
 
 
 

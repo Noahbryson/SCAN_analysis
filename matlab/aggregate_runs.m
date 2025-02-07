@@ -5,12 +5,14 @@
 close all
 clear 
 BCI2KPath = '/Users/nkb/Documents/NCAN/BCI2000tools';
-bci2ktools(BCI2KPath);Subject = 'BJH062'; % String of Subject NameSubject = 'BJH058'; % String of Subject Name
+bci2ktools(BCI2KPath);Subject = 'BJH071'; % String of Subject NameSubject = 'BJH058'; % String of Subject Name
 user = expanduser('~'); % Get local path for interoperability on different machines, function in my tools dir. 
 DataPath = sprintf("%s/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/%s",user,Subject); % Path to data
 checkDir(DataPath); % check if data dir exists
-agg_dir = sprintf('%s/aggregate',DataPath);
-save_dir =sprintf('%s/aggregate/preprocessed',DataPath);
+saveFlag = '_R'; %leave as empty char unless parsing
+tgtFile = '_R'; % str for folder to parse in parent subject directory
+agg_dir = sprintf('%s/aggregate%s',DataPath,saveFlag);
+save_dir =sprintf('%s/aggregate%s/preprocessed',DataPath,saveFlag);
 if ~exist(agg_dir,'dir')
     mkdir(agg_dir);
     mkdir(save_dir);
@@ -18,8 +20,7 @@ end
 %% Load Data and Metadata
     
 dirContents = dir(DataPath);
-tgtFile = 'run'; % str for folder to parse in parent subject directory
-dataLocs = parseDir(dirContents,tgtFile,'beans');
+dataLocs = parseDir(dirContents,tgtFile,'aggregate');
 runs = struct;
 % create a structure with all runs for aggregation. Only states and signals
 % time series must be aggregated. 

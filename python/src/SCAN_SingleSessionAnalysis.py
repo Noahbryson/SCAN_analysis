@@ -9,6 +9,7 @@ import distinctipy
 import math
 import pickle
 import seaborn as sns
+import re
 from sklearn import metrics
 from sklearn.cluster import KMeans
 from .functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, geometric_mean,kde,euclidean_distance, signed_cross_correlation, angle_3D, angle_distances_3D
@@ -73,7 +74,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         self.task_epochs,self.rest_epochs = self.reshape_epochs()
         if epoch_by_movement:
             self.task_epochs = self._epoch_via_EMG()
-        
+        self.rereferenceType = refType
         print('end init')
 
     
@@ -84,9 +85,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                 self.data['sEEG'].pop(traj)
         
     def _processSignals(self,load=True,refType:str='common'):
-        if refType.lower().find('com')>-1:
-            commonAvg = self.getCommonAverages()
-            
+        commonAvg = self.getCommonAverages()
         fname = f'{refType}_processed.pkl'
         if fname in os.listdir(self.subjectDir / 'preprocessed') and load==True:
             signalGroups = readPickle(self.subjectDir / 'preprocessed' /fname)
@@ -237,7 +236,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         output = {}
         output['EEG'] = EEG
         return output
-    def process_sEEG(self,sEEG:dict,refType: str,commonAvg):
+    def process_sEEG(self,sEEG:dict,rerefType: str,commonAvg):
         
         trajectories = [key[0:2] for key in sEEG.keys()]
         trajectories = set(trajectories)
@@ -246,29 +245,77 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         
         output = {}
         for traj in trajectories:
-            if refType.lower().find('bip')>-1:
-                data = [v for k,v in sEEG.items() if k.find(traj)>-1]
+            data = [v for k,v in sEEG.items() if k.find(traj)>-1]
+            labels = [k for k,_ in sEEG.items() if k.find(traj)>-1]
+            labelSort = [int(re.findall(r"\d+",k.split('_')[0])[0]) for k in sEEG.keys() if k.find(traj)>-1]
+            indexVals = sorted(range(len(labelSort)), key=lambda k: labelSort[k])
+            data = [data[i] for i in indexVals]
+            labels = [labels[i] for i in indexVals]
+                
+            if rerefType.lower().find('bip')>-1:
                 traj_data = {}
                 for idx,vals in enumerate(data[0:-1]):
-                    label = f'{traj}_{idx+1}_{idx+2}'
-                    temp = self._bipolarReference(data[idx+1],vals)
-                    # temp = notch(temp,self.fs,60,30,1)
-                    traj_data[label] = temp 
+                    e = re.findall(r"\d+",labels[idx+1].split('_')[0])
+                    e1 = labels[idx].split('_')[0]
+                    e1int = int(re.findall(r"\d+",e1)[0])
+                    if e1int + 1 == int(e[0]):
+                        label = f'{e1}-b-{e[0]}'
+                        temp = self._bipolarReference(data[idx+1],vals)
+                        # temp = notch(temp,self.fs,60,30,1)
+                        traj_data[label] = temp
+                    else:
+                        pass 
                 output[traj] = traj_data
-            elif refType.lower().find('com')>-1:
-                data = [v for k,v in sEEG.items() if k.find(traj)>-1]
+            elif rerefType.lower().find('com')>-1:
+                # data = [v for k,v in sEEG.items() if k.find(traj)>-1]
                 traj_data = {}
                 for idx,vals in enumerate(data):
-                    label = f'{traj}_{idx+1}'
+                    # label = f'{traj}_{idx+1}'
+                    label = f'{traj}{idx+1}'
                     temp = vals - commonAvg
                     # temp = notch(temp,self.fs,60,30,1)
                     traj_data[label] = temp 
                 output[traj] = traj_data
-            else:
-                data = [v for k,v in sEEG.items() if k.find(traj)>-1]
+            elif rerefType.lower().find('lapl')>-1:
+                # data = [v for k,v in sEEG.items() if k.find(traj)>-1]
+                # labels = [k for k,_ in sEEG.items() if k.find(traj)>-1]
                 traj_data = {}
                 for idx,vals in enumerate(data):
-                    label = f'{traj}_{idx+1}'
+                    if idx == 0:
+                        e = re.findall(r"\d+",labels[idx+1].split('_')[0])
+                        e1 = labels[idx].split('_')[0]
+                        e1int = int(re.findall(r"\d+",e1)[0])
+                        if e1int + 1 == int(e[0]):
+                            label = f'{e1}-b-{e[0]}'
+                            temp = self._bipolarReference(data[idx+1],vals)
+                        # temp = notch(temp,self.fs,60,30,1)
+                            traj_data[label] = temp
+                        else:
+                            pass
+                    elif idx == len(data)-1:
+                        e = re.findall(r"\d+",labels[idx+1].split('_')[0])
+                        e1 = labels[idx].split('_')[0]
+                        e1int = int(re.findall(r"\d+",e1)[0])
+                        if e1int + 1 == int(e[0]):
+                            label = f'{e1}-b-{e[0]}'
+                            temp = self._bipolarReference(vals,data[idx-1])
+                        # temp = notch(temp,self.fs,60,30,1)
+                            traj_data[label] = temp
+                        else:
+                            pass
+                    else:
+                        label = f'{labels[idx]}-laplace'
+                        temp = self._laplacianRereference(vals,data[idx+1],data[idx-1])
+                        # temp = notch(temp,self.fs,60,30,1)
+                        traj_data[label] = temp
+                output[traj] = traj_data 
+            
+            
+            else:
+                # data = [v for k,v in sEEG.items() if k.find(traj)>-1]
+                traj_data = {}
+                for idx,vals in enumerate(data):
+                    label = labels[idx]
                     temp = vals
                     # temp = notch(temp,self.fs,60,30,1)
                     traj_data[label] = temp 
@@ -460,6 +507,10 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         return out
     def _bipolarReference(self,a,b):
         return b-a  
+    
+    def _laplacianRereference(self,data:np.ndarray,upstream:np.ndarray,downstream:np.ndarray):
+        x=data - np.mean((upstream,downstream),axis=0)
+        return x
     def export_epochs(self,signalType,fname):
         out = {}
         for i in list(self.muscleMapping.keys()):
@@ -762,10 +813,12 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         cols = np.linspace(1,10,10,dtype=int).tolist()
         renameCols = [f'norm_{i}' for i in cols]
         temp = pd.DataFrame()
+        # t1 = pd.DataFrame()
         for k,v in global_average.items():
-            loc = data_df.loc[data_df['name'] == k]
-            loc[cols] = loc.loc[:,cols].applymap(lambda x: divide_by_array(x,v))
-            temp = pd.concat([temp,loc])
+            temp1 = data_df.loc[data_df['name'] == k]
+            t1 = temp1.copy()
+            t1[cols] = temp1.loc[:,cols].applymap(lambda x: divide_by_array(x,v))
+            temp = pd.concat([temp,t1])
         temp.rename({i:j for i,j in zip(cols,renameCols)},axis=1,inplace=True)
         temp.sort_index(axis=0,inplace=True)
         data_df[renameCols] = temp[renameCols]
@@ -1260,38 +1313,34 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                 else:
                     out[c] = temp
         return out
-    def parse_results_for_triple_responders(self,result:dict,dataSubset:list=[],save:bool=False, label = 'all',thresh=0.15):
+    def parse_results_for_triple_responders(self,result:dict,dataSubset:list=[],comparison:str='greater',save:bool=False, label = 'all',thresh=0.15):
         result = self.reshapeEffect(result)
         if len(dataSubset) > 0:
             # print('parsing via keys')
             result = parseDictViaKeys(data=result,keys=dataSubset)
 
-        inter = []
-        hand = []
-        foot = []
-        face = []
-        na = []
-        arrayMap = {0:hand,1:foot,2:face}
-        for i,j in result.items():
-            data = np.array([v for v in j.values()])
-            if (data > thresh).all():
-                inter.append(i)
-            elif (data > thresh).any():
-                if data[0] > thresh and (data[1:]<thresh).all():
-                    hand.append(i)
-                elif data[1] > thresh and data[0] <thresh and data[2] <thresh:
-                    foot.append(i)
-                elif data[2] > thresh and (data[:2]<thresh).all():
-                    face.append(i)
-                else:
-                    arrayMap[np.argmax(data)].append(i)                    
-            else:
-                na.append(i)
-        saveOut = {'hand':hand,'foot':foot,'face':face,'inter':inter,'na':na}
-        if save:
-            saveDir = self._validateDir(mainDir=self.aggregate_results_dir,subDir=f'{self.subject}_{self.sessionID}')
-            scio.savemat(saveDir/f'{self.sessionID}_channel_sort_{label}.mat',saveOut)
-        return inter
+        allChans = list(result.keys())
+        allData = np.array([[h['Hand'],h['Foot'],h['Tongue']] for h in result.values()])
+        if comparison == 'less':
+            binary_mask = (allData<thresh).astype(int)
+        else:
+            binary_mask = (allData>thresh).astype(int)
+        classes = binary_mask.dot(2 ** np.arange(binary_mask.shape[1]))
+        labels={
+            0:'na',
+            1:'face',
+            2:'foot',
+            3:'hand',
+            4:'foot-face',
+            5:'hand-face',
+            6:'hand-foot',
+            7:'inter'
+        }
+        non_specific= ['inter','foot-face','hand-face','hand-foot']
+        classification = {i:labels[j] for i,j in zip(allChans,classes)}
+        inter = [i for i,j in classification.items() if j=='inter']
+        multiMotor = [i for i,j in classification.items() if j in non_specific]
+        return inter,classification, multiMotor
 
 def epoch_powerAverage(a,f_slice = []):
     averagePower = np.empty(len(a))
