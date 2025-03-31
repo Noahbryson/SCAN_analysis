@@ -1,0 +1,144 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.axes import Axes
+
+
+def three_color_gradient(color1:tuple[float],color2:tuple[float],color3:tuple[float],steps:int=100):
+      half_steps = steps // 2
+      gradient1 = np.linspace(color1, color2, half_steps, endpoint=False)
+      gradient2 = np.linspace(color2, color3, steps - half_steps)
+      full_gradient = np.vstack((gradient1, gradient2))
+      
+      return full_gradient
+
+def circular_gradientN(color1:tuple[float],color2:tuple[float],color3:tuple[float],resolution:float=1,shift=30):
+      """
+      circular_gradient generates a circular color gradient from three colors. more colors options coming in the future
+
+      Args:
+            colors (tuple): all colors to be included in the gradient
+            color1 (tuple[float]): rgb color 1
+            color2 (tuple[float]): rgb color 2
+            color3 (tuple[float]): rgb color 3
+            resolution (float, optional): How many degrees per color step to make. Defaults to 1.
+            shift (int, optional): degrees from zero to shift the color wheel. Defaults to 30.
+
+      Returns:
+            np.ndarray: 360/resolution x 2 numpy array of the color map. 
+      """
+      N = int(360 / resolution)
+      steps = N // 3
+      gradient12 = np.linspace(color1, color2, steps, endpoint=False)
+      gradient13 = np.linspace(color3, color1, steps, endpoint=False)
+      gradient32 = np.linspace(color2, color3, steps, endpoint=False)
+      colors = np.vstack([gradient12,gradient32,gradient13])
+      shift = int(shift/resolution)
+      colors = np.roll(colors,shift)
+      return colors
+
+def circular_gradient3(color1:tuple[float],color2:tuple[float],color3:tuple[float],resolution:float=1,shift=30):
+      """
+      circular_gradient generates a circular color gradient from three colors. more colors options coming in the future
+
+      Args:
+            color1 (tuple[float]): rgb color 1
+            color2 (tuple[float]): rgb color 2
+            color3 (tuple[float]): rgb color 3
+            resolution (float, optional): How many degrees per color step to make. Defaults to 1.
+            shift (int, optional): degrees from zero to shift the color wheel. Defaults to 30.
+
+      Returns:
+            np.ndarray: 360/resolution x 2 numpy array of the color map. 
+      """
+      N = int(360 / resolution)
+      steps = N // 3
+      gradient12 = np.linspace(color1, color2, steps, endpoint=False)
+      gradient13 = np.linspace(color3, color1, steps, endpoint=False)
+      gradient32 = np.linspace(color2, color3, steps, endpoint=False)
+      colors = np.vstack([gradient12,gradient32,gradient13])
+      shift = int(shift/resolution)
+      colors = np.roll(colors,shift)
+      return colors
+
+
+def colorwheel_standalone(rgb_array):
+      plt.figure(figsize=(8, 8))
+      ax = plt.subplot(121, projection='polar')
+
+      # Plot the color wheel
+      theta = np.linspace(0, 2*np.pi, len(rgb_array))
+      ax.scatter(theta, np.ones(len(rgb_array)), c=rgb_array, s=200)
+
+      # Customize plot
+      ax.set_xticks([])
+      ax.set_yticks([])
+      ax.spines['polar'].set_visible(False)
+      ax.set_title('360-degree Color Wheel')
+
+      ax2 = plt.subplot(122)
+      patches,texts = ax2.pie(np.ones(len(rgb_array)),colors=rgb_array,wedgeprops = {'linewidth': 0})
+      for p in patches:
+            p.set_edgecolor(p.get_facecolor())
+      # ax2.spines['polar'].set_visible(False)
+
+def colorwheel(rgb_array,ax: Axes):
+      patches,texts = ax.pie(np.ones(len(rgb_array)),colors=rgb_array,wedgeprops = {'linewidth': 0})
+      for p in patches:
+            p.set_edgecolor(p.get_facecolor())
+      ax.set_xticks([])
+      ax.set_yticks([])
+      return ax
+
+
+
+def hex2RGB(ip: str):
+      ip = ip.replace('#','')
+      return tuple(int(ip[i:i+2],16)/255 for i in (0, 2, 4))
+
+def targetColorSwatch(targetNames,targetColors,ax:Axes):
+      N = len(targetNames)
+      xy = np.ones(N)
+      ax.bar(targetNames,xy,color=targetColors)
+      # for i,j in zip(xy,targetNames):
+      #       ax.text(i-.1,i,j)
+      return ax
+
+
+def circle_gradient_key(color_gradient,target_names,target_colors):
+      # colorwheel_standalone(color_gradient)
+      fig = plt.figure()
+      a1 = plt.subplot(121)
+      a1 = colorwheel(color_gradient,ax=a1)
+      a2 = plt.subplot(122)
+      a2=targetColorSwatch(target_names,target_colors,ax=a2)
+      return fig
+
+
+def default_gradient():
+      # yellow #FFFF00)
+      # Cyan / Aqua	#00FFFF
+      # Magenta / Fuchsia	#FF00FF
+      
+      # c1 = '#A23B96';c2 = '#5BB39C';c3 = '#FAB27A'
+      c1 = '#A23B96';c2 = '#5BB39C';c3 = '##FF9506'
+      #   c1 = '#FFFF00';c2 = '#00FFFF';c3 = '#FF00FF'
+      # c1 = '#FAB27A';c2 = '#00FFFF';c3 = '#FF00FF'
+      return circular_gradient3(hex2RGB(c1),hex2RGB(c2),hex2RGB(c3),resolution=1,shift=30)
+
+
+if __name__ == '__main__':
+      c1 = '#A23B96'
+      c2 = '#5BB39C'
+      c3 = '#FAB27A'
+      colors = circular_gradient3(hex2RGB(c1),hex2RGB(c2),hex2RGB(c3),resolution=1,shift=30)
+      # colorwheel_standalone(colors)
+      # fig = plt.figure()
+      # a1 = plt.subplot(121)
+      # a1 = colorwheel(colors,ax=a1)
+      
+      tColors = [hex2RGB(c1),hex2RGB(c2),hex2RGB(c3)]
+      tNames = ['Hand','Foot','Face']
+      # a2 = plt.subplot(122)
+      # a2=targetColorSwatch(tNames,tColors,ax=a2)
+      circle_gradient_key(colors,tNames,tColors)
+      plt.show()

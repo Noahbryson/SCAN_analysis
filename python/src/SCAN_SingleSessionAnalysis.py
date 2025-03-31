@@ -675,9 +675,9 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
     def _sEEG_epochPSDs(self,freqs):
         move = pd.DataFrame()
         cols = self.task_epochs.columns
-        window = sig.get_window('hann',Nx=self.fs)
-        f = [i for i in range(1,301)]
-        f = np.array(f)
+        Nx = int(self.fs)
+        window = sig.get_window('hann',Nx=Nx)
+        f = np.linspace(freqs[0],freqs[1],int((freqs[1]-freqs[0])/(self.fs/Nx)),dtype=int)
         for col in cols :
             if type(col)==int:
                 move[col] = self.task_epochs[col].apply(lambda x:single_channel_pwelch(x,self.fs,window,f_bound=freqs))
@@ -762,16 +762,100 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
     def sliceDataFrame(self,df,slice,key):
         df[key] = df[key].apply(lambda x: sliceArray(x,slice))
         return df
+    
+    def somatotopic_tuning(self,result: dict,tuning_colors:np.ndarray,plotCMAP=False)-> dict:
+        from src.functions.graphics import circle_gradient_key
+        
+        
+        result = self.reshapeEffect(result)
+        output = {}
+        color_out = {}
+        angle_key = {}
+        targets = ['Hand','Foot','Tongue'] 
+        t_angles = [complex_angle(np.exp(1j*np.pi/6)), complex_angle(np.exp(1j*np.pi*3/2)),complex_angle(np.exp(1j*np.pi*5/6))]
+        t_colors = [tuning_colors[int(complex_angle(np.exp(1j*np.pi/6)))],tuning_colors[int(complex_angle(np.exp(1j*np.pi*3/2)))],tuning_colors[int(complex_angle(np.exp(1j*np.pi*5/6)))]]#~270 deg
+        angle_key = {targets[i]:{'angle':t_angles[i],'color':t_colors[i]} for i in range(len(targets))}
+        if plotCMAP:
+            circle_gradient_key(tuning_colors,target_names=targets,target_colors=t_colors)
+            plt.show(block=False)
+        for key,data in result.items():
+            temp = {}
+            hand =  np.exp(1j*np.pi/6)   * data['Hand']
+            foot =  np.exp(1j*np.pi*3/2) * data['Foot']
+            tongue =np.exp(1j*np.pi*5/6) * data['Tongue']
+            res = hand+foot+tongue
+            mag = abs(res)
+            theta = complex_angle(res)
+            temp['mag'] = mag
+            temp['theta'] = theta
+            temp['complex'] = res
+            temp['color'] = tuning_colors[int(theta)]
+            color_out[key] = tuning_colors[int(theta)]
+            output[key] = temp
+        df = pd.DataFrame(output).T
+        df.reset_index(inplace=True)
+        df.rename({'index':'channel'},axis=1,inplace=True)
+        
+        return df, color_out, angle_key, tuning_colors
+    
+    def shared_representation(self,result: dict, sigchans:list):
+        
+        result = self.reshapeEffect(result)
+        result = {i:result[i] for i in result if i in sigchans}
+        res = []
+        
+        for key,data in result.items():
+            res.append(np.power(data['Hand']+data['Foot']+data['Tongue'],1/3))
+        df = pd.DataFrame(res,index=list(result.keys()),columns=['Shared Rep'])
+        df.reset_index(inplace=True); print(df)
+        df.rename({'index':'channel'},axis=1,inplace=True)
+        return df
     def task_power_analysis(self, saveMAT:bool=False,freqRange:list = [1,300],plotSection:bool=False):
+        # from .functions.filters import moving_average_np
         motor, rest, f = self._sEEG_epochPSDs([freqRange[0],freqRange[1]+1])
         gamma_slice = [np.where(f==self.gammaRange[0])[0][0],np.where(f==self.gammaRange[-1])[0][0]+1]
         motor, fullMotor = self._epoch_PSD_average(motor)
         rest, fullRest = self._epoch_PSD_average(rest)
         g_av = self._globalPSD_normalize()
-        fullMotor = self.normalize_single_trial_PSDs(fullMotor,g_av)
-        fullRest = self.normalize_single_trial_PSDs(fullRest,g_av)
+        fullMotor = self.__normalize_single_trial_PSDs(fullMotor,g_av)
+        fullRest  = self.__normalize_single_trial_PSDs(fullRest,g_av)
         motor = self.normalizePSDs(motor,g_av)
+        motor['norm_std']=fullMotor['norm_std']
         rest = self.normalizePSDs(rest,g_av)
+        rest['norm_std']=fullRest['norm_std']
+        # idx = 23
+        # print(rest.iloc[idx].head(1))
+        # fig = plt.figure()
+        # ax = plt.axes()
+        # ax = fig.add_axes(ax)
+        # ry = moving_average_np(rest.iloc[idx]['normalized'],10)
+        # ax.plot(f,ry,c=(0,0,0))
+        # ax.fill_between(f,ry-rest.iloc[idx]['norm_std'],ry+rest.iloc[idx]['norm_std'],color=(0,0,0),alpha=0.3)
+        # my = moving_average_np(motor.iloc[idx]['normalized'],10)
+        # ax.plot(f,my,c=(.71,0,.71))
+        # ax.fill_between(f,my-motor.iloc[idx]['norm_std'],my+motor.iloc[idx]['norm_std'],color=(.71,0,.71),alpha=0.3)
+        # ax.vlines([70,170],0,8)
+        # ax.set_xlim(0,200)
+        # fig = plt.figure()
+        # ax = plt.axes()
+        # ax = fig.add_axes(ax)
+        # ttt = moving_average_np(rest.iloc[idx]['avg'],5)
+        # ax.plot(f,ttt,c=(0,0,0))
+        # # ax.plot(f,rest.iloc[idx]['avg'],c=(0,0,0))
+        # # for i in range(10):
+        # #     ax.plot(f,fullRest.iloc[idx][f'norm_{i+1}'],c=(0,0,0),alpha=0.1)
+        # # ax.fill_between(f,rest.iloc[idx]['avg']-rest.iloc[idx]['std'],rest.iloc[idx]['avg']+rest.iloc[idx]['std'],color=(0,0,0),alpha=0.3)
+        # ttt = moving_average_np(motor.iloc[idx]['avg'],5)
+        # ax.plot(f,ttt,c=(.71,0,.71))
+        # # ax.plot(f,motor.iloc[idx]['avg'],c=(.71,0,.71))
+        
+        
+        # for i in range(10):
+        #     ax.plot(f,fullMotor.iloc[idx][f'norm_{i+1}'],c=(.71,0,.71),alpha=0.1)
+        # ax.fill_between(f,motor.iloc[idx]['avg']-motor.iloc[idx]['std'],motor.iloc[idx]['avg']+motor.iloc[idx]['std'],color=(.71,0,.71),alpha=0.3)
+        # ax.set_xlim(0,200)
+        # ax.vlines([70,170],0.000001,100)
+        # ax.set_yscale('log')
         motor_gamma = self.sliceDataFrame(motor,gamma_slice,key='normalized')
         rest_gamma = self.sliceDataFrame(rest,gamma_slice,key='normalized')
         stdev = self._epoch_PSD_std(motor,rest)
@@ -809,7 +893,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             scio.savemat(saveDir/f'{self.sessionID}_rsq.mat',r_sq_out)
         return r_sq, p, U_res, d_res,roc_res
     
-    def normalize_single_trial_PSDs(self,data_df:pd.DataFrame,global_average: dict):
+    def __normalize_single_trial_PSDs(self,data_df:pd.DataFrame,global_average: dict):
         cols = np.linspace(1,10,10,dtype=int).tolist()
         renameCols = [f'norm_{i}' for i in cols]
         temp = pd.DataFrame()
@@ -822,7 +906,10 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         temp.rename({i:j for i,j in zip(cols,renameCols)},axis=1,inplace=True)
         temp.sort_index(axis=0,inplace=True)
         data_df[renameCols] = temp[renameCols]
+        data_df['norm_std'] = data_df.apply(lambda x: np.std(np.column_stack(x[renameCols].to_numpy()),axis=1),axis=1)
         return data_df
+    
+    
     
     
     def compute_cross_correlations(self,motor:pd.DataFrame,rest:pd.DataFrame,stdev:pd.DataFrame):
@@ -1359,12 +1446,14 @@ def single_channel_pwelch(array:np.ndarray,fs:int,window:np.ndarray,overlap=0.5,
     """
     function to pass to a dataframe as a lambda function to perform columnwise PSDs on epoched data 
     """
-    f,pxx = sig.welch(x=array,fs=fs,window=window,noverlap=int(fs*overlap),scaling='density')
+    f,pxx = sig.welch(x=array,fs=fs,window=window,noverlap=int(len(window)*overlap),scaling='density')
     if test:
         fig,ax = method_plot(pxx,f,logy=True)
         ax.axvline(f[301])
         plt.show()
-    f,pxx = f[f_bound[0]:f_bound[1]],pxx[f_bound[0]:f_bound[1]]
+    on = np.where(f==f_bound[0])[0][0]
+    off = np.where(f==f_bound[-1])[0][0]
+    f,pxx = f[on:off],pxx[on:off]
     return pxx
 
 def method_plot(y,x = False, log = False, logx = False,logy=False):
@@ -1443,6 +1532,25 @@ def adjust_color(color: tuple,intensity:float):
 def divide_by_array(data,divisor):
     res = np.divide(data,divisor)
     return res
+
+def complex_angle(res):
+    angle = np.arctan(np.imag(res)/np.real(res)) *180/np.pi
+    if np.real(res) <0: # quadrants 2 and 3
+        if np.imag(res)<0: # quad 3
+            theta = 180+angle
+        else: #quad 2
+            theta = 180+angle 
+    else: # quadrants 1 and 4
+        if np.imag(res)<0: #quad 4
+            theta = 360 + angle
+        else: #quadrant 1
+            theta = angle
+    return theta
+
+
+
+
+
 """Script for debugging"""
 
 if __name__ == '__main__':
@@ -1501,6 +1609,6 @@ if __name__ == '__main__':
             
             # sig_r,sig_d,sig_roc,sig_U = a.aggregateResults(r_sq, p_vals, U_res, d_res,roc_res,saveMAT=False)
             
-            # a.visualizeMetrics(r_sq, d_res,roc_res,U_res,numBins=40) # all channels
         
+            # a.visualizeMetrics(r_sq, d_res,roc_res,U_res,numBins=40) # all channels
         # a.show()
