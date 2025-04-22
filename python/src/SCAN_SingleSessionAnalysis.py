@@ -763,7 +763,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         df[key] = df[key].apply(lambda x: sliceArray(x,slice))
         return df
     
-    def somatotopic_tuning(self,result: dict,tuning_colors:np.ndarray,plotCMAP=False)-> dict:
+    def somatotopic_tuning(self,result: dict,tuning_colors:np.ndarray,cmapResolution:int=5,plotCMAP=False)-> dict:
         from src.functions.graphics import circle_gradient_key
         
         
@@ -773,7 +773,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         angle_key = {}
         targets = ['Hand','Foot','Tongue'] 
         t_angles = [complex_angle(np.exp(1j*np.pi/6)), complex_angle(np.exp(1j*np.pi*3/2)),complex_angle(np.exp(1j*np.pi*5/6))]
-        t_colors = [tuning_colors[int(complex_angle(np.exp(1j*np.pi/6)))],tuning_colors[int(complex_angle(np.exp(1j*np.pi*3/2)))],tuning_colors[int(complex_angle(np.exp(1j*np.pi*5/6)))]]#~270 deg
+        t_colors = [tuning_colors[int(cmapResolution*complex_angle(np.exp(1j*np.pi/6)))],tuning_colors[int(cmapResolution*complex_angle(np.exp(1j*np.pi*3/2)))],tuning_colors[int(cmapResolution*complex_angle(np.exp(1j*np.pi*5/6)))]]#~270 deg
         angle_key = {targets[i]:{'angle':t_angles[i],'color':t_colors[i]} for i in range(len(targets))}
         if plotCMAP:
             circle_gradient_key(tuning_colors,target_names=targets,target_colors=t_colors)
@@ -799,16 +799,19 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         return df, color_out, angle_key, tuning_colors
     
     def shared_representation(self,result: dict, sigchans:list):
-        
+        import math
         result = self.reshapeEffect(result)
-        result = {i:result[i] for i in result if i in sigchans}
         res = []
-        
         for key,data in result.items():
-            res.append(np.power(data['Hand']+data['Foot']+data['Tongue'],1/3))
-        df = pd.DataFrame(res,index=list(result.keys()),columns=['Shared Rep'])
+            sr = math.cbrt(data['Hand']*data['Foot']*data['Tongue'])
+            if key in sigchans:
+                res.append([sr,True])
+            else:
+                res.append([sr,False])
+        df = pd.DataFrame(res,index=list(result.keys()),columns=['Shared Rep','Significant'])
         df.reset_index(inplace=True); print(df)
         df.rename({'index':'channel'},axis=1,inplace=True)
+        
         return df
     def task_power_analysis(self, saveMAT:bool=False,freqRange:list = [1,300],plotSection:bool=False):
         # from .functions.filters import moving_average_np
@@ -1596,8 +1599,8 @@ if __name__ == '__main__':
         # precentral_locations = ['HL7', 'HL8', 'HL9', 'IL13', 'IL14', 'JL12', 'JL13', 'JL14', 'KL7', 'KL8', 'KL9', 'KL10', 'KL11', 'KL12', 'KL13', 'KL14', 'KL15', 'KL16', 'LL4', 'LL5', 'LL6', 'LL7', 'LL8', 'LL9', 'LL10', 'ML3', 'ML4', 'ML5', 'ML8', 'ML9', 'NL11', 'NL12']
         # precentral_locations = [i[:2]+'_'+i[2:] for i in precentral_locations]
         
-        pp = True
-        if pp:
+        fig2_brains = True
+        if fig2_brains:
             
             # a.parse_results_for_triple_responders(effect_of_interest,precentral_locations,save=True,label='precentral')
             a.parse_results_for_triple_responders(effect_of_interest,sig_chans,save=True,label='significant',thresh=0.1)

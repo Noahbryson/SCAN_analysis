@@ -29,9 +29,9 @@ def kde(data):
 
 
 def geometric_mean(pointset):
-    sqrs = np.square(pointset)
-    root_order = (1.0/np.shape(sqrs)[-1])
-    return (np.sum(sqrs,axis=-1))**(root_order)
+    
+    N = len(pointset)
+    return np.prod(pointset)**(1/N)
 
 def xy_angle(x,y):
     """calculates positive angle from x-axis in x-y plane in degrees (0-360)

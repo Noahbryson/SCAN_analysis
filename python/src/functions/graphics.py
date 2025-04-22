@@ -50,15 +50,24 @@ def circular_gradient3(color1:tuple[float],color2:tuple[float],color3:tuple[floa
       Returns:
             np.ndarray: 360/resolution x 2 numpy array of the color map. 
       """
-      N = int(360 / resolution)
+      N = int(360 * resolution)
       steps = N // 3
       gradient12 = np.linspace(color1, color2, steps, endpoint=False)
-      gradient13 = np.linspace(color3, color1, steps, endpoint=False)
-      gradient32 = np.linspace(color2, color3, steps, endpoint=False)
-      colors = np.vstack([gradient12,gradient32,gradient13])
-      shift = int(shift/resolution)
-      colors = np.roll(colors,shift)
-      return colors
+      gradient23 = np.linspace(color2, color3, steps, endpoint=False)
+      gradient31 = np.linspace(color3, color1, steps, endpoint=False)
+      colors = np.vstack([gradient12,gradient23,gradient31])
+      shift = int(shift*resolution)
+      # shift = int(180/resolution)
+      color = np.roll(colors,shift,axis=0)
+      return color
+
+
+import numpy as np
+from collections import defaultdict
+
+
+
+
 
 
 def colorwheel_standalone(rgb_array):
@@ -114,31 +123,37 @@ def circle_gradient_key(color_gradient,target_names,target_colors):
       return fig
 
 
-def default_gradient():
+def default_gradient(resolution:int):
       # yellow #FFFF00)
       # Cyan / Aqua	#00FFFF
       # Magenta / Fuchsia	#FF00FF
       
       # c1 = '#A23B96';c2 = '#5BB39C';c3 = '#FAB27A'
-      c1 = '#A23B96';c2 = '#5BB39C';c3 = '##FF9506'
+      c1 = '#ff00ff'; c2 = '#ffff00'; c3 = '#00ffff'
+      # c1 = '#A23B96';c2 = '#5BB39C';c3 = '#FF9506'
+      # c1 = '#de24bf';c2 = '#3ba253';c3 = '#f28b0c'
       #   c1 = '#FFFF00';c2 = '#00FFFF';c3 = '#FF00FF'
       # c1 = '#FAB27A';c2 = '#00FFFF';c3 = '#FF00FF'
-      return circular_gradient3(hex2RGB(c1),hex2RGB(c2),hex2RGB(c3),resolution=1,shift=30)
+      return circular_gradient3(hex2RGB(c1),hex2RGB(c2),hex2RGB(c3),resolution=resolution,shift=30)
 
 
 if __name__ == '__main__':
       c1 = '#A23B96'
       c2 = '#5BB39C'
       c3 = '#FAB27A'
-      colors = circular_gradient3(hex2RGB(c1),hex2RGB(c2),hex2RGB(c3),resolution=1,shift=30)
-      # colorwheel_standalone(colors)
-      # fig = plt.figure()
-      # a1 = plt.subplot(121)
-      # a1 = colorwheel(colors,ax=a1)
       
-      tColors = [hex2RGB(c1),hex2RGB(c2),hex2RGB(c3)]
       tNames = ['Hand','Foot','Face']
-      # a2 = plt.subplot(122)
-      # a2=targetColorSwatch(tNames,tColors,ax=a2)
+      
+      c1 = '#ff00ff'; c2 = '#0fff05'; c3 = '#00ffff'
+      colors = circular_gradient3(hex2RGB(c1),hex2RGB(c2),hex2RGB(c3),resolution=5,shift=30)
+      tColors = [hex2RGB(c1),hex2RGB(c2),hex2RGB(c3)]
       circle_gradient_key(colors,tNames,tColors)
-      plt.show()
+      
+      c1 = '#ff00ff'; c2 = '#ffff00'; c3 = '#00ffff'
+      colors = circular_gradient3(hex2RGB(c1),hex2RGB(c2),hex2RGB(c3),resolution=5,shift=30)
+      tColors = [hex2RGB(c1),hex2RGB(c2),hex2RGB(c3)]
+      # colors = circular_gradient3([.1,.7,.41],hex2RGB(c1),[0,0,1],resolution=5,shift=30)
+      # tColors = [[.1,.7,.41],hex2RGB(c1),[0,0,1]]
+      circle_gradient_key(colors,tNames,tColors)
+      
+      plt.show()  
