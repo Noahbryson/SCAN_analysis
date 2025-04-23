@@ -14,9 +14,9 @@ if __name__ == '__main__':
         dataPath = userPath / r"Box\Brunner Lab\DATA\SCAN_Mayo"
     else:
         dataPath = userPath/"Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo"
-    subject = 'BJH071'
+    subject = 'BJH041'
     gammaRange = [70,170]
-    session = 'aggregate_L'
+    session = 'pre_ablation'
     brainType = "brain_destrieux"
     laplacian = False
     bipolar = True
@@ -51,10 +51,9 @@ if __name__ == '__main__':
         print('brain path not valid')
 
 
-
-
     a = SCAN_SingleSessionAnalysis(dataPath,subject,session,remove_trajectories=[],
         load=loadData,plot_stimuli=False,gammaRange=gammaRange,refType=reref)
+    a.run_ERP_processing(plot=True,save=True,show=False)
     r_sq, p_vals, U_res, d_res,roc_res = a.task_power_analysis(saveMAT=save)
     sig_chans, nonsig_chans, channel_descriptions = a.returnSignificantLocations(p_vals,alpha=0.05)
     effect_of_interest =r_sq
@@ -65,9 +64,6 @@ if __name__ == '__main__':
 
     intereffectors = [i.replace('_','') for i in intereffectors]
     nonspecifics = [i.replace('_','') for i in nonspecifics]
-
-        
-        
         
     if brainFlag:
         v1=brain._generateAxis(1)

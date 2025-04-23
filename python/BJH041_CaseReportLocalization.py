@@ -36,16 +36,13 @@ else:
 
 bp = dataPath/subject/'brain'/f'{brainType}.mat'
 try:
-      brain = PyBrain(bp,subject=subject,brainName=brainType)
+      brain = PyBrain(bp,subject=subject,brainName=brainType,bipolar=bipolar,laplacian=laplacian)
       print(f'\nLoaded {brainType} for {subject} from {bp}\n')
       
 except:
       brain = None
       print('brain path not valid')
-if bipolar:
-            brain._makeBipolarElectrodes()
-if laplacian:
-      pass
+
 electrodemap,regionsLocs = brain._get_ROI_map()
 centralSulcusInfo = [[i,brain.regionColors[j]] for j,i in enumerate(brain.regions) if i.lower().find('central')>-1]
 plottingRegions = []
@@ -122,6 +119,8 @@ for i,j in zip(multiMotor,nonspecifics_locs):
 
 
 fig2_brains = True
+
+
 if fig2_brains:            
       
       """Shared Representation"""
@@ -183,4 +182,7 @@ if fig2_brains:
       rma_vol= brain.opaquebrain_projection_figure_export(rma_vol,RMA_path,'RMA_tuning',data=shared_rep.rename({'Shared Rep':'metric','Significant':'p'},axis=1),
             electrodeSubset=targetIdx,significant=True,colorMap=[chan_tuning_colors[i] for i in targets])
       rma_vol.close()
+
+
+
 print(0)
