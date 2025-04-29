@@ -121,7 +121,7 @@ for i,j in zip(multiMotor,nonspecifics_locs):
 
 
 
-fig2_brains = True
+fig2_brains = False
 if fig2_brains:            
       
       """Shared Representation"""
