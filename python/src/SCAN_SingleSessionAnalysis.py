@@ -337,7 +337,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         epochs['info'] = ['motor onset', 'motor offset', 'rest offset']
         return epochs
     
-    def extractAllERPs(self,show=True,close=False,save=True,gamma=True,mu=False,beta=False,plot=True):
+    def run_ERP_processing(self,show=True,close=False,save=True,gamma=True,mu=False,beta=False,plot=True):
         """extractAllERPs _summary_
 
         Returns:
@@ -665,12 +665,8 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                 saveDir = mainDir/subDir
             else:
                 saveDir=mainDir
-        
-        if not os.path.exists(saveDir):
-            os.mkdir(saveDir)
-            print(f'writing {saveDir} as save path')
-        else:
-            print('path exists')
+        os.makedirs(saveDir,exist_ok=True)
+        print(f'{saveDir} as save path')
         return Path(saveDir)
     def _sEEG_epochPSDs(self,freqs):
         move = pd.DataFrame()
