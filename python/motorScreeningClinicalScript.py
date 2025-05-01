@@ -17,7 +17,7 @@ if __name__ == '__main__':
     subject = 'BJH041'
     gammaRange = [70,170]
     session = 'pre_ablation'
-    brainType = "brain_destrieux"
+    brainType = "MNIbrain_destrieux"
     laplacian = False
     bipolar = True
     loadData=True
@@ -35,15 +35,22 @@ if __name__ == '__main__':
     # brain = PyBrain(bp,subject=subject,brainName=brainType)
     # brain._makeBipolarElectrodes()
     try: #Generation of brain if the file exists, if not data will be parsed as is
-        brain = PyBrain(bp,subject=subject,brainName=brainType)
+        brain = PyBrain(bp,subject=subject,brainName=brainType,bipolar=bipolar,laplacian=laplacian)
         print(f'\nLoaded {brainType} for {subject} from {bp}\n')
-        if bipolar:
-                brain._makeBipolarElectrodes()
-        if laplacian:
-            pass    
         electrodemap,regionsLocs = brain._get_ROI_map()
+        
         centralSulcusInfo = [[i,brain.regionColors[j]] for j,i in enumerate(brain.regions) if i.lower().find('central')>-1]
+        plottingRegions = []
+        for idx,i in enumerate(brain.regions):
+            if i.lower().find('central')>-1:
+                    # plottingRegions.append([i,brain.regionColors[idx]])
+                    plottingRegions.append([i,[.7,.09,.09]])
+            else:
+                    plottingRegions.append([i,[.9,.9,.9]])
+                    # plottingRegions.append([i,[.6,.6,.6]])
+        side = 'both'
         brainFlag = True
+        
     except Exception as err:
         brainFlag = False
         print(err)
@@ -51,9 +58,9 @@ if __name__ == '__main__':
         print('brain path not valid')
 
 
-    a = SCAN_SingleSessionAnalysis(dataPath,subject,session,remove_trajectories=[],
+    a = SCAN_SingleSessionAnalysis(dataPath,subject,session,remove_trajectories=['OR'],
         load=loadData,plot_stimuli=False,gammaRange=gammaRange,refType=reref)
-    a.run_ERP_processing(plot=True,save=True,show=False)
+    # a.run_ERP_processinsg(plot=True,save=True,show=False)
     r_sq, p_vals, U_res, d_res,roc_res = a.task_power_analysis(saveMAT=save)
     sig_chans, nonsig_chans, channel_descriptions = a.returnSignificantLocations(p_vals,alpha=0.05)
     effect_of_interest =r_sq
@@ -64,10 +71,25 @@ if __name__ == '__main__':
 
     intereffectors = [i.replace('_','') for i in intereffectors]
     nonspecifics = [i.replace('_','') for i in nonspecifics]
+
+    cmap_resolution=1
+    from 
+    tuning_colors = default_gradient(cmap_resolution)
+    tuning,chan_tuning_colors,angle_key, color_array = a.somatotopic_tuning(r_sq,tuning_colors=tuning_colors,plotCMAP=False,cmapResolution=cmap_resolution)
+    colorLab = list(angle_key.keys())
+    labColor = [i['color'] for i in angle_key.values()]
+    t_ = [[i,j['color']] for i,j in angle_key.items()]
+    t_names = [i[0] for i in t_]
+    t_colors = [i[1] for i in t_]
+    allChans = tuning['channel'].to_list()
+    allChans_idx = brain._getElectrodeIndexFromLabels(labels=allChans)
+    shared_rep = a.shared_representation(effect_of_interest,sig_chans)
+
+
         
     if brainFlag:
         v1=brain._generateAxis(1)
-        v1=brain._plotBrainVolume(v1,0.05,[1,1,1],side=side)
+        v1,_=brain._plotBrainVolume(v1,0.05,[1,1,1],side=side)
         v1=brain._plotBrainRegions(v1,regions=[i[0] for i in centralSulcusInfo], colors=[i[-1] for i in centralSulcusInfo],opacity=.2,side=side)
         
         nonspecifics_locs = [electrodemap[i] for i in nonspecifics]
@@ -87,12 +109,32 @@ if __name__ == '__main__':
                     targets.append(i[0])
         
         
-        # targetIdx = brain._getElectrodeIndexFromLabels(labels=intereffectors)
-        # targetIdx.extend( brain._getElectrodeIndexFromLabels(labels=nonspecifics))
-        targetIdx = brain._getElectrodeIndexFromLabels(labels=targets)
-        v1=brain._plot_electrodes_on_volume(v1,electrodeSubset=targetIdx,side=side,color=(0,1,1))
         targetIdx = brain._getElectrodeIndexFromLabels(labels=intereffectors)
-        v1=brain._plot_electrodes_on_volume(v1,electrodeSubset=targetIdx,side=side,color=(1,1,0))
+        targetIdx.extend( brain._getElectrodeIndexFromLabels(labels=nonspecifics))
+        targetIdx = brain._getElectrodeIndexFromLabels(labels=targets)
+        v1,aa=brain._plot_electrodes_on_volume(v1,electrodeSubset=targetIdx,side=side,color=(0,1,1))
+        targetIdx = brain._getElectrodeIndexFromLabels(labels=intereffectors)
+        v1,ab=brain._plot_electrodes_on_volume(v1,electrodeSubset=targetIdx,side=side,color=(1,1,0))
+        
+        # targets = intereffectors
+        # targetIdx = brain._getElectrodeIndexFromLabels(labels=targets)
+        
+        # rma_vol=brain._generateAxis()
+        # rma_vol=brain._plotBrainRegions(rma_vol,regions=[i[0] for i in plottingRegions], 
+        #         colors=[i[-1] for i in plottingRegions],opacity=0.7,side=side)
+        # rma_vol=brain._plotBrainRegions(rma_vol,regions=[i[0] for i in centralSulcusInfo], 
+        #         colors=[i[-1] for i in centralSulcusInfo],opacity=1,side=side)
+        # rma_vol=brain._plotEffectOnVolume()
+        
+        # rma_vol.show_axes()
+        
+        
+        
+        
+        
+        
+        
+        
         v1.show()
     else:
         print('intereffectors')

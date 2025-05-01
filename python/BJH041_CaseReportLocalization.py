@@ -42,20 +42,10 @@ try:
 except:
       brain = None
       print('brain path not valid')
-if bipolar:
-            brain._makeBipolarElectrodes()
-if laplacian:
-      pass
+
 electrodemap,regionsLocs = brain._get_ROI_map()
 centralSulcusInfo = [[i,brain.regionColors[j]] for j,i in enumerate(brain.regions) if i.lower().find('central')>-1]
-plottingRegions = []
-for idx,i in enumerate(brain.regions):
-      if i.lower().find('central')>-1:
-            # plottingRegions.append([i,brain.regionColors[idx]])
-            plottingRegions.append([i,[.7,.09,.09]])
-      else:
-            plottingRegions.append([i,[.9,.9,.9]])
-            # plottingRegions.append([i,[.6,.6,.6]])
+
 side = 'both'
 
 # traj_vol = brain.plot_all_traj()
@@ -92,12 +82,12 @@ allChans = tuning['channel'].to_list()
 allChans_idx = brain._getElectrodeIndexFromLabels(labels=allChans)
 shared_rep = a.shared_representation(effect_of_interest,sig_chans)
 
-intereffectors, channel_classifcation, nonspecifics = a.parse_results_for_triple_responders(d_res,datasubset,save=save,label='significant',thresh=1,comparison='')
-intereffectors = [i.replace('_','') for i in intereffectors]
-intereffector_locs = [electrodemap[i] for i in intereffectors]
-print("intereffectors (cohen's d)")
-for i,j in zip(intereffectors,intereffector_locs):
-      print(i,': ',j)      
+# intereffectors, channel_classifcation, nonspecifics = a.parse_results_for_triple_responders(d_res,datasubset,save=save,label='significant',thresh=1,comparison='')
+# intereffectors = [i.replace('_','') for i in intereffectors]
+# intereffector_locs = [electrodemap[i] for i in intereffectors]
+# print("intereffectors (cohen's d)")
+# for i,j in zip(intereffectors,intereffector_locs):
+#       print(i,': ',j)      
 
 intereffectors, channel_classifcation, nonspecifics = a.parse_results_for_triple_responders(effect_of_interest,datasubset,save=save,label='significant',thresh=.1,comparison='')
 intereffectors = [i.replace('_','') for i in intereffectors]
@@ -119,11 +109,54 @@ for i,j in zip(multiMotor,nonspecifics_locs):
 # targetIdx = brain._getElectrodeIndexFromLabels(labels=intereffectors)
 # targetIdx.extend( brain._getElectrodeIndexFromLabels(labels=nonspecifics))
 
+plottingRegions = []
+for idx,i in enumerate(brain.regions):
+      if i.lower().find('central')>-1:
+            # plottingRegions.append([i,brain.regionColors[idx]])
+            # plottingRegions.append([i,[.7,.09,.09]])
+            # plottingRegions.append([i,[1,.7,.09]])
+            plottingRegions.append([i,[.71,.31,.01]])
+      else:
+            plottingRegions.append([i,[.9,.9,.9]])
+            # plottingRegions.append([i,[.6,.6,.6]])
 
-
+fig1=True
+if fig1:
+      SZ_channels = ['HL6-b-7','HL7-b-8','HL8-b-9','HL9-b-10','HL10-b-11','HL11-b-12','KL8-b-9','KL9-b-10','KL10-b-11','KL11-b-12','KL12-b-13','KL13-b-14','KL14-b-15','KL15-b-16','ML2-b-3','ML3-b-4','ML4-b-5','ML5-b-6','ML6-b-7']
+      sz_colors = np.zeros([len(SZ_channels),3])
+      sz_colors[2:4,:]   = np.array([53, 152, 204])/255
+      # sz_colors[11,:]    = np.array([0,1,0])
+      sz_colors[11,:]    = np.array([1,.02,.1])
+      sz_colors[12:14,:] = np.array([105,201,202])/255
+      sz_colors[15:18,:] = np.array([75,96,247])/255
+      SZ_colors = {i:j for i,j in zip(SZ_channels,sz_colors)}
+      sz_vol=brain._generateAxis(1)
+      sz_vol,coords=brain._plotBrainVolume(sz_vol,0.05,[1,1,1],side=side)
+      SZ_path = boxPath/r'Brunner Lab/Writing/manuscripts/SCAN ABLATION 2025/figures/FIG1'
+      targetIdx = brain._getElectrodeIndexFromLabels(labels=SZ_channels)
+      sz_vol=brain._generateAxis()
+      sz_vol=brain._plotBrainRegions(sz_vol,regions=[i[0] for i in centralSulcusInfo], colors=[i[-1] for i in centralSulcusInfo],opacity=1,side=side)
+      sz_vol=brain._plotBrainRegions(sz_vol,regions=[i[0] for i in plottingRegions], 
+            colors=[i[-1] for i in plottingRegions],opacity=.7,side=side)
+      sz_vol.show_axes()
+      
+      testData = shared_rep.rename({'Significant':'p'})
+      testData['metric'] = np.ones(len(testData))*0.15
+      sz_vol= brain.opaquebrain_projection_figure_export(sz_vol,SZ_path,'SZ_network_prop',data=testData,
+            electrodeSubset=targetIdx,significant=False,colorMap=[SZ_colors[i] for i in SZ_channels])
+      sz_vol.show()
+      
 fig2_brains = False
 if fig2_brains:            
-      
+      plottingRegions = []
+      for idx,i in enumerate(brain.regions):
+            if i.lower().find('central')>-1:
+                  # plottingRegions.append([i,brain.regionColors[idx]])
+                  plottingRegions.append([i,[.7,.09,.09]])
+            else:
+                  plottingRegions.append([i,[.9,.9,.9]])
+                  # plottingRegions.append([i,[.6,.6,.6]])
+
       """Shared Representation"""
       sharedRep_path = boxPath/r'Brunner Lab/Writing/manuscripts/SCAN ABLATION 2025/figures/FIG2/shared_rep'
       sharedRep_vol=brain._generateAxis()
