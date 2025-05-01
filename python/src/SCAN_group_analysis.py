@@ -6,13 +6,15 @@ import scipy.stats as stats
 import pandas as pd
 from .functions.filters import *
 import matplotlib.patches as patch
+import seaborn as sns
 import distinctipy
 import math
 import pickle
 import seaborn as sns
-from sklearn import metrics
-from sklearn.cluster import KMeans
-from .functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, geometric_mean,kde,euclidean_distance, signed_cross_correlation, angle_3D, angle_distances_3D
+
+# from sklearn import metrics
+# from sklearn.cluster import KMeans
+# from .functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, geometric_mean,kde,euclidean_distance, signed_cross_correlation, angle_3D, angle_distances_3D
 from .modules.response_datastructs import ERP_struct, export_ERP_Obj, load_ERP_Obj
 
 class SCAN_group_analysis():
@@ -92,7 +94,79 @@ class SCAN_group_analysis():
                   with open(fpath, 'rb') as fp:
                         x = pickle.load(fp)
                   self.EMG_isolation[k] = x
+                  
+      def __load_rsq(self):
+            rsqs = pd.DataFrame()
+            for k,v in self.subjectDirs.items():
+                  df = pd.read_csv(v/f'{k}_rsq.csv')
+                  df=df.set_index('channel')
+                  df['session'] = k
+                  rsqs = pd.concat([rsqs,df])
+            return rsqs.reset_index()      
+      def __load_channnel_labels(self,reference_session):
+            p = self.subjectDirs[reference_session]
+            labels = pd.read_csv(p/'channel_classifications.csv')
+            self.labels = labels.astype({'significant':'bool'})
+            return labels
+      
+      def compare_shared_rep(self,reference_session,significant=True,region_search_strs=[]):
+            
+            rsqs = self.__load_rsq()
+            channel_labels = self.__load_channnel_labels(reference_session)
+            regions=set(channel_labels['region'].to_list())
+            data = rsqs.merge(channel_labels,on='channel')
+            data['shared_rep'] = data.apply(lambda x: shared_rep(x['Hand'],x['Tongue'],x['Foot']),axis=1)
+            if len(region_search_strs) > 0:
+                  subregions = []
+                  for i in region_search_strs:
+                        subregions.extend([s for s in regions if region_search_strs in s])
+                  subregions = np.unique(subregions).tolist()
+                  data['target_region'] = data['region'].apply(lambda x: x in subregions)
+                  data = data.loc[data['target_region']==True]
+            if significant:
+                  data = data.loc[data['significant']==True]
+            fig,ax = plt.subplots(1,1,sharex=True,sharey=True)
 
+            # ax[0]=sns.stripplot(data=data,x='class',y='Hand',hue='session')      
+            # ax[1]=sns.stripplot(data=data,x='class',y='Tongue',hue='session')      
+            # ax[2]=sns.stripplot(data=data,x='class',y='Foot',hue='session')      
+            sns.swarmplot(data=data,x='class',y='shared_rep',hue='session',ax=ax)      
+            data_clusters = cluster_rsq_by_label(data,significant)
+      def compare_rsq(self,reference_session,significant=True,region_search_strs=[]):
+            rsqs = self.__load_rsq()
+            channel_labels = self.__load_channnel_labels(reference_session)
+            regions=set(channel_labels['region'].to_list())
+            data = rsqs.merge(channel_labels,on='channel')
+            if len(region_search_strs) > 0:
+                  subregions = []
+                  for i in region_search_strs:
+                        subregions.extend([s for s in regions if region_search_strs in s])
+                  subregions = np.unique(subregions).tolist()
+                  data['target_region'] = data['region'].apply(lambda x: x in subregions)
+                  data = data.loc[data['target_region']==True]
+            if significant:
+                  data = data.loc[data['significant']==True]
+            fig,ax = plt.subplots(3,1,sharex=True,sharey=True)
 
+            # ax[0]=sns.stripplot(data=data,x='class',y='Hand',hue='session')      
+            # ax[1]=sns.stripplot(data=data,x='class',y='Tongue',hue='session')      
+            # ax[2]=sns.stripplot(data=data,x='class',y='Foot',hue='session')      
+            sns.swarmplot(data=data,x='class',y='Hand',hue='session',ax=ax[0])      
+            sns.swarmplot(data=data,x='class',y='Tongue',hue='session',ax=ax[1])      
+            sns.swarmplot(data=data,x='class',y='Foot',hue='session',ax=ax[2])      
+            data_clusters = cluster_rsq_by_label(data,significant)
+            
+            return 0
+def cluster_rsq_by_label(data,significant):
+      clusterBois = {}
+      
+      for i in set(data['class']):
+            pass
+            
+      return 0
+      
+def shared_rep(x,y,z):
+      from math import cbrt
+      return cbrt(x*y*z)
 
 

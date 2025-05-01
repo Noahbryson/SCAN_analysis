@@ -58,7 +58,7 @@ side = 'L'
 
 a = SCAN_SingleSessionAnalysis(dataPath,subject,session,remove_trajectories=['OR'],
       load=loadData,plot_stimuli=False,gammaRange=gammaRange,refType=reref)
-r_sq, p_vals, U_res, d_res,roc_res = a.task_power_analysis(saveMAT=save)
+r_sq, p_vals, U_res, d_res,roc_res = a.task_power_analysis(save=save)
 sig_chans, nonsig_chans, channel_descriptions = a.returnSignificantLocations(p_vals,alpha=0.05)
 cmap_resolution=1
 tuning_colors = default_gradient(cmap_resolution)

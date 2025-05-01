@@ -809,7 +809,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         df.rename({'index':'channel'},axis=1,inplace=True)
         
         return df
-    def task_power_analysis(self, saveMAT:bool=False,freqRange:list = [1,300],plotSection:bool=False):
+    def task_power_analysis(self, save:bool=False,freqRange:list = [1,300],plotSection:bool=False):
         # from .functions.filters import moving_average_np
         motor, rest, f = self._sEEG_epochPSDs([freqRange[0],freqRange[1]+1])
         gamma_slice = [np.where(f==self.gammaRange[0])[0][0],np.where(f==self.gammaRange[-1])[0][0]+1]
@@ -822,39 +822,6 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         motor['norm_std']=fullMotor['norm_std']
         rest = self.normalizePSDs(rest,g_av)
         rest['norm_std']=fullRest['norm_std']
-        # idx = 23
-        # print(rest.iloc[idx].head(1))
-        # fig = plt.figure()
-        # ax = plt.axes()
-        # ax = fig.add_axes(ax)
-        # ry = moving_average_np(rest.iloc[idx]['normalized'],10)
-        # ax.plot(f,ry,c=(0,0,0))
-        # ax.fill_between(f,ry-rest.iloc[idx]['norm_std'],ry+rest.iloc[idx]['norm_std'],color=(0,0,0),alpha=0.3)
-        # my = moving_average_np(motor.iloc[idx]['normalized'],10)
-        # ax.plot(f,my,c=(.71,0,.71))
-        # ax.fill_between(f,my-motor.iloc[idx]['norm_std'],my+motor.iloc[idx]['norm_std'],color=(.71,0,.71),alpha=0.3)
-        # ax.vlines([70,170],0,8)
-        # ax.set_xlim(0,200)
-        # fig = plt.figure()
-        # ax = plt.axes()
-        # ax = fig.add_axes(ax)
-        # ttt = moving_average_np(rest.iloc[idx]['avg'],5)
-        # ax.plot(f,ttt,c=(0,0,0))
-        # # ax.plot(f,rest.iloc[idx]['avg'],c=(0,0,0))
-        # # for i in range(10):
-        # #     ax.plot(f,fullRest.iloc[idx][f'norm_{i+1}'],c=(0,0,0),alpha=0.1)
-        # # ax.fill_between(f,rest.iloc[idx]['avg']-rest.iloc[idx]['std'],rest.iloc[idx]['avg']+rest.iloc[idx]['std'],color=(0,0,0),alpha=0.3)
-        # ttt = moving_average_np(motor.iloc[idx]['avg'],5)
-        # ax.plot(f,ttt,c=(.71,0,.71))
-        # # ax.plot(f,motor.iloc[idx]['avg'],c=(.71,0,.71))
-        
-        
-        # for i in range(10):
-        #     ax.plot(f,fullMotor.iloc[idx][f'norm_{i+1}'],c=(.71,0,.71),alpha=0.1)
-        # ax.fill_between(f,motor.iloc[idx]['avg']-motor.iloc[idx]['std'],motor.iloc[idx]['avg']+motor.iloc[idx]['std'],color=(.71,0,.71),alpha=0.3)
-        # ax.set_xlim(0,200)
-        # ax.vlines([70,170],0.000001,100)
-        # ax.set_yscale('log')
         motor_gamma = self.sliceDataFrame(motor,gamma_slice,key='normalized')
         rest_gamma = self.sliceDataFrame(rest,gamma_slice,key='normalized')
         stdev = self._epoch_PSD_std(motor,rest)
@@ -883,13 +850,15 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         r_sq = self.compute_cross_correlations(motor_gamma,rest_gamma,stdev_gamma)
         p, U_res, d_res,roc_res = self.compute_power_distribution_significance(fullMotor,fullRest,gamma_slice)
         # r_sq_all = self.compute_cross_correlations_by_trial(motor_gamma,rest_gamma,g_av)
-        if saveMAT:
-            saveDir = self._validateDir()
-            for entry,values in r_sq.items():
-                scio.savemat(saveDir/f'{entry}_rsq.mat',values)
+        if save:
             saveDir = self._validateDir(mainDir=self.aggregate_results_dir,subDir=f'{self.subject}_{self.sessionID}')
             r_sq_out = {i.split('_')[-1]:j for i,j in r_sq.items()}
+            df = pd.DataFrame(r_sq_out)
+            df.reset_index(inplace=True)
+            df.rename({'index':'channel'},inplace=True,axis=1)
+            df.set_index('channel',inplace=True)
             scio.savemat(saveDir/f'{self.sessionID}_rsq.mat',r_sq_out)
+            df.to_csv(saveDir/f'{self.subject}_{self.sessionID}_rsq.csv')
         return r_sq, p, U_res, d_res,roc_res
     
     def __normalize_single_trial_PSDs(self,data_df:pd.DataFrame,global_average: dict):
@@ -1407,6 +1376,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
 
         allChans = list(result.keys())
         allData = np.array([[h['Hand'],h['Foot'],h['Tongue']] for h in result.values()])
+        testDict = {i:j for i,j in zip(allChans,allData)}
         if comparison == 'less':
             binary_mask = (allData<thresh).astype(int)
         else:
@@ -1414,16 +1384,17 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         classes = binary_mask.dot(2 ** np.arange(binary_mask.shape[1]))
         labels={
             0:'na',
-            1:'face',
+            1:'hand',
             2:'foot',
-            3:'hand',
-            4:'foot-face',
+            3:'hand-foot',
+            4:'face',
             5:'hand-face',
-            6:'hand-foot',
+            6:'foot-face',
             7:'inter'
         }
         non_specific= ['inter','foot-face','hand-face','hand-foot']
         classification = {i:labels[j] for i,j in zip(allChans,classes)}
+        # classification = {i:[labels[j],(testDict[i]>thresh).astype(int)] for i,j in zip(allChans,classes)}
         inter = [i for i,j in classification.items() if j=='inter']
         multiMotor = [i for i,j in classification.items() if j in non_specific]
         return inter,classification, multiMotor
@@ -1572,7 +1543,7 @@ if __name__ == '__main__':
                 load=True,plot_stimuli=False,gammaRange=gammaRange,refType='common')
         fig = plt.figure(figsize=(20,8))
         row = 1; col =1
-        r_sq, p_vals, U_res, d_res,roc_res = a.task_power_analysis(saveMAT=True)
+        r_sq, p_vals, U_res, d_res,roc_res = a.task_power_analysis(save=True)
         sig_chans, nonsig_chans, channel_descriptions = a.returnSignificantLocations(p_vals,alpha=0.05)
         # x = a.cluster_optimization(r_sq,'r_sq',dataSubset=[],close=False,save=True)
         effect_of_interest = r_sq
