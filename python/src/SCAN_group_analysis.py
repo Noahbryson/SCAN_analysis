@@ -11,6 +11,7 @@ import distinctipy
 import math
 import pickle
 import seaborn as sns
+from src.functions.stat_methods import paired_two_sample
 
 # from sklearn import metrics
 # from sklearn.cluster import KMeans
@@ -23,7 +24,7 @@ class SCAN_group_analysis():
             self.subjects = subjectList
             self.subjectDirs = {sub:dataDir/sub for sub in subjectList}
             self.colorPalletBest = [(62/255,108/255,179/255), (27/255,196/255,225/255), (129/255,199/255,238/255),(44/255,184/255,149/255),(0,129/255,145/255), (193/255,189/255,47/255),(200/255,200/255,200/255)]
-
+            self.movements = ['Hand','Foot','Tongue']
             
             
             
@@ -106,13 +107,14 @@ class SCAN_group_analysis():
       def __load_channnel_labels(self,reference_session):
             p = self.subjectDirs[reference_session]
             labels = pd.read_csv(p/'channel_classifications.csv')
-            self.labels = labels.astype({'significant':'bool'})
-            return labels
+            labels = labels.astype({'significant':'bool'})
+            classes = sorted(list(set(labels['class'])))
+            return labels, classes
       
-      def compare_shared_rep(self,reference_session,significant=True,region_search_strs=[]):
+      def compare_shared_rep(self,reference_session,compare_session,significant=True,region_search_strs=[],paired=False):
             
             rsqs = self.__load_rsq()
-            channel_labels = self.__load_channnel_labels(reference_session)
+            channel_labels, chan_classes = self.__load_channnel_labels(reference_session)
             regions=set(channel_labels['region'].to_list())
             data = rsqs.merge(channel_labels,on='channel')
             data['shared_rep'] = data.apply(lambda x: shared_rep(x['Hand'],x['Tongue'],x['Foot']),axis=1)
@@ -125,16 +127,100 @@ class SCAN_group_analysis():
                   data = data.loc[data['target_region']==True]
             if significant:
                   data = data.loc[data['significant']==True]
-            fig,ax = plt.subplots(1,1,sharex=True,sharey=True)
-
-            # ax[0]=sns.stripplot(data=data,x='class',y='Hand',hue='session')      
-            # ax[1]=sns.stripplot(data=data,x='class',y='Tongue',hue='session')      
-            # ax[2]=sns.stripplot(data=data,x='class',y='Foot',hue='session')      
-            sns.swarmplot(data=data,x='class',y='shared_rep',hue='session',ax=ax)      
+                  
+            if paired:
+                  fig,axs = plt.subplots(1,len(chan_classes),sharex=False,sharey=True)
+                  stats = {}
+                  rm_cols = []
+                  for ax,i in zip(axs,chan_classes):
+                        df = data.loc[data['class'] == i]
+                        if len(df) > 0:
+                              a = df.loc[data['session'] == reference_session]
+                              b = df.loc[data['session'] == compare_session]
+                              
+                              res = paired_two_sample(a['shared_rep'].to_numpy(),b['shared_rep'].to_numpy(),ax)
+                              stats[i] = res
+                              ax.set_xticks([0,1])        
+                              ax.set_xticklabels([reference_session,compare_session])
+                              ax.set_title(i)        
+                        else:
+                              print(f'no {i} tuned channels')
+                              rm_cols.append(ax)   
+                  axs[0].set_ylabel(f'Shared Representation Magnitude')
+                  for a in axs.flat:
+                        a.label_outer()
+                        a.set_ylim([-0.5,1])
+                        a.tick_params(axis='x', labelrotation=45)
+                  for i in rm_cols:
+                        fig.delaxes(i)
+            else:      
+                  fig,ax = plt.subplots(1,1,sharex=True,sharey=True)
+                  sns.stripplot(data=data,x='class',y='shared_rep',hue='session',ax=ax)      
             data_clusters = cluster_rsq_by_label(data,significant)
-      def compare_rsq(self,reference_session,significant=True,region_search_strs=[]):
+            fig.suptitle('Change in Shared Representation')
+      def compare_tuning(self,reference_session,compare_session,significant=True,region_search_strs=[],paired=False,effect='Magnitude'):
+            
             rsqs = self.__load_rsq()
-            channel_labels = self.__load_channnel_labels(reference_session)
+            channel_labels, chan_classes = self.__load_channnel_labels(reference_session)
+            regions=set(channel_labels['region'].to_list())
+            data = rsqs.merge(channel_labels,on='channel')
+            data[['tuning','Magnitude','Angle']] = data.apply(lambda x: tuning(x['Hand'],x['Tongue'],x['Foot']),axis=1,result_type='expand')
+            data['Magnitude'] = data['Magnitude'].astype('float').copy()
+            data['Angle'] = data['Angle'].astype('float').copy()
+            if len(region_search_strs) > 0:
+                  subregions = []
+                  for i in region_search_strs:
+                        subregions.extend([s for s in regions if region_search_strs in s])
+                  subregions = np.unique(subregions).tolist()
+                  data['target_region'] = data['region'].apply(lambda x: x in subregions)
+                  data = data.loc[data['target_region']==True]
+            if significant:
+                  data = data.loc[data['significant']==True]
+                  
+            if paired:
+                  fig,axs = plt.subplots(1,len(chan_classes),sharex=False,sharey=True)
+                  stats = {}
+                  rm_cols = []
+                  for ax,i in zip(axs,chan_classes):
+                        df = data.loc[data['class'] == i]
+                        if len(df) > 0:
+                              a = df.loc[data['session'] == reference_session]
+                              b = df.loc[data['session'] == compare_session]
+                              
+                              res,ax = paired_two_sample(a[effect].to_numpy(),b[effect].to_numpy(),ax)
+                              stats[i] = res
+                              ax.set_xticks([0,1])        
+                              ax.set_xticklabels([reference_session,compare_session])
+                              statstr = f'{i}\nW={res.statistic}\np={round(res.pvalue,4)}'
+                              ax.set_title(statstr)        
+                              # ax.text(0,np.max([a[effect]]),statstr)
+                              if res.pvalue < 0.05:
+                                    ax.text(0,1.1*np.max([a[effect]]),'*')
+                        else:
+                              print(f'no {i} tuned channels')
+                              rm_cols.append(ax)
+                  axs[0].set_ylabel(f'Somatotopic Tuning {effect}')
+                  for a in axs.flat:
+                        a.label_outer()
+                        if effect == 'Angle':
+                              a.set_ylim([0,360])
+                        else:
+                              a.set_ylim([-0.5,1])
+                        a.tick_params(axis='x', labelrotation=45)
+                  for i in rm_cols:
+                        fig.delaxes(i)
+            else:      
+                  fig,ax = plt.subplots(1,1,sharex=True,sharey=True)
+                  sns.stripplot(data=data,x='class',y='shared_rep',hue='session',ax=ax)      
+            data_clusters = cluster_rsq_by_label(data,significant)      
+            fig.suptitle(f'Somatotopic Tuning {effect}')
+            
+            
+            
+      def compare_rsq(self,reference_session,compare_session,significant=True,region_search_strs=[],paired=False):
+            
+            rsqs = self.__load_rsq()
+            channel_labels, chan_classes = self.__load_channnel_labels(reference_session)
             regions=set(channel_labels['region'].to_list())
             data = rsqs.merge(channel_labels,on='channel')
             if len(region_search_strs) > 0:
@@ -146,27 +232,65 @@ class SCAN_group_analysis():
                   data = data.loc[data['target_region']==True]
             if significant:
                   data = data.loc[data['significant']==True]
-            fig,ax = plt.subplots(3,1,sharex=True,sharey=True)
-
-            # ax[0]=sns.stripplot(data=data,x='class',y='Hand',hue='session')      
-            # ax[1]=sns.stripplot(data=data,x='class',y='Tongue',hue='session')      
-            # ax[2]=sns.stripplot(data=data,x='class',y='Foot',hue='session')      
-            sns.swarmplot(data=data,x='class',y='Hand',hue='session',ax=ax[0])      
-            sns.swarmplot(data=data,x='class',y='Tongue',hue='session',ax=ax[1])      
-            sns.swarmplot(data=data,x='class',y='Foot',hue='session',ax=ax[2])      
-            data_clusters = cluster_rsq_by_label(data,significant)
             
+            if paired:
+                  fig,axs = plt.subplots(3,len(chan_classes),sharex=False,sharey=True)
+                  stats = {}
+                  rm_cols = []
+                  for ax,i in zip(axs.T,chan_classes):
+                        df = data.loc[data['class'] == i]
+                        if len(df) > 0:
+                              a = df.loc[data['session'] == reference_session]
+                              b = df.loc[data['session'] == compare_session]
+                              for j,movement in enumerate(self.movements):
+                                    res = paired_two_sample(a[movement].to_numpy(),b[movement].to_numpy(),ax[j])
+                                    if i in stats:
+                                          stats[i].update({movement:res})
+                                    else:
+                                          stats[i] = {movement:res}
+                              ax[-1].set_xticks([0,1],[reference_session,compare_session])        
+                              ax[-1].set_xticklabels([reference_session,compare_session])
+                              ax[0].set_title(i)        
+                        else:
+                              print(f'no {i} tuned channels')
+                              rm_cols.append(ax)
+                  axs[0,0].set_ylabel(f'{self.movements[0]} r^2')
+                  axs[1,0].set_ylabel(f'{self.movements[1]} r^2')
+                  axs[2,0].set_ylabel(f'{self.movements[2]} r^2')
+                  for a in axs.flat:
+                        a.label_outer()
+                        a.set_ylim([-0.5,1])
+                        a.tick_params(axis='x', labelrotation=45)
+                  for i in rm_cols:
+                        for j in i:
+                              fig.delaxes(j)
+
+            else:
+                  fig,axs = plt.subplots(3,1,sharex=True,sharey=True)
+                  sns.stripplot(data=data,x='class',y='Hand',hue='session',ax=axs[0])      
+                  sns.stripplot(data=data,x='class',y='Tongue',hue='session',ax=axs[1])      
+                  sns.stripplot(data=data,x='class',y='Foot',hue='session',ax=axs[2])      
+            # data_clusters = cluster_rsq_by_label(data,significant)
+            fig.suptitle('Change in r^2 due to ablation')
             return 0
 def cluster_rsq_by_label(data,significant):
       clusterBois = {}
       
       for i in set(data['class']):
             pass
+      
             
       return 0
-      
 def shared_rep(x,y,z):
-      from math import cbrt
-      return cbrt(x*y*z)
-
-
+      from math import sqrt
+      
+      return sqrt(x**2+y**2+z**2)
+def tuning(hand,foot,tongue):
+      from src.SCAN_SingleSessionAnalysis import complex_angle
+      hand_c =  np.exp(1j*np.pi/6)   * hand
+      foot_c =  np.exp(1j*np.pi*3/2) * foot
+      tongue_c =np.exp(1j*np.pi*5/6) * tongue
+      res = hand_c+foot_c+tongue_c
+      mag = float(abs(res))
+      theta = complex_angle(res)
+      return res,mag,theta

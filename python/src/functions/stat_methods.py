@@ -1,3 +1,6 @@
+import random
+import distinctipy
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats as stats
 from sklearn.neighbors import KernelDensity
@@ -200,3 +203,72 @@ def confidence_interval(a, alpha: float=0.95):
 def one_samp_ttest(data,popmean=0,test_type='two-sided'):
     return stats.ttest_1samp(data,popmean=popmean,alternative=test_type)
 
+def paired_two_sample(a:np.array,b:np.array,ax:plt.axes, colorPallet:list = distinctipy.get_colors(3,pastel_factor=0.5,rng=random.seed(35)), bars=False,jitter = 0.0, normalityAlpha = 0.05):
+        
+        import itertools
+        import scipy.stats
+        import numpy as np
+        """
+        Takes two ordered 1D arrays, computes a paired ttest between them 
+        a: control group to compare to
+        b: experimental group
+        Assesses groups for normality
+        Performs Paired T Test if both groups are normally distributed
+        Performs Wilcoxon Signed Rank Test if otherwise
+        ---
+        Dependent on numpy, matplotlib.pyplot, itertools and scipy
+        ---
+        returns t statistics, pvalues and a matplotlib axes 
+        """
+
+        if len(a) != len(b):
+            raise ValueError("a and b must be of equal length")
+
+        while len(colorPallet) > 2:
+            colorPallet.pop(1)
+        
+        
+        """Assess Normality"""
+        normalFlag = False
+        for array in [a,b]:
+                ks, ks_p = scipy.stats.ks_1samp(array,scipy.stats.norm.cdf)
+                if ks_p <= normalityAlpha:
+                    normalFlag = False
+                    print('Non-Normal')
+                else:
+                    print('normal')
+        if normalFlag :
+            res = scipy.stats.ttest_rel(a=a,b=b)
+        else:
+            res = scipy.stats.wilcoxon(x=a,y=b)
+        #make this value 0.05 if you want paired points offset from each other, or zero if stacked
+        stdev_a = a.std()
+        stdev_b = b.std()
+        
+        """If you want bar plots of means"""
+        if bars:
+            ax.bar(0,a.mean())
+            ax.bar(1,b.mean())
+            
+            
+        ax.errorbar(0,a.mean(), yerr=stdev_a,markerfacecolor = colorPallet[0],  alpha=0.5, ecolor='grey', capsize=10,marker='o',ms=10)
+        ax.errorbar(1,b.mean(), yerr=stdev_b,markerfacecolor = colorPallet[1], alpha=0.5, ecolor='grey', capsize=10,marker='o',ms=10)
+            
+                
+        
+        for q,p in zip(a,b):
+            noise = np.random.normal(0,jitter,1)
+            x = [noise, 1+noise]
+            y = [q,p]
+            ax.scatter(noise,q,color=colorPallet[0])
+            ax.scatter(1+noise,p,color=colorPallet[1])
+            if p - q > 0:
+                alpha = 0.4
+            else:
+                alpha = 0.2
+            ax.plot(x,y, color='k', alpha = alpha)
+        ax.set_xlim([-0.5,1.5])
+        # ax.text(0.5,np.max([a,b],axis=-1),f'Test Stat={res.statistic}\np={res.pvalue}')
+        # if res.pvalue < 0.05:
+        #     ax.text(0.5,1.1*np.max([a,b],axis=-1),'*')
+        return res,ax

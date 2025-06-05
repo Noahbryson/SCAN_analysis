@@ -120,7 +120,7 @@ for idx,i in enumerate(brain.regions):
             plottingRegions.append([i,[.9,.9,.9]])
             # plottingRegions.append([i,[.6,.6,.6]])
 
-fig1=True
+fig1=False
 if fig1:
       SZ_channels = ['HL6-b-7','HL7-b-8','HL8-b-9','HL9-b-10','HL10-b-11','HL11-b-12','KL8-b-9','KL9-b-10','KL10-b-11','KL11-b-12','KL12-b-13','KL13-b-14','KL14-b-15','KL15-b-16','ML2-b-3','ML3-b-4','ML4-b-5','ML5-b-6','ML6-b-7']
       sz_colors = np.zeros([len(SZ_channels),3])
