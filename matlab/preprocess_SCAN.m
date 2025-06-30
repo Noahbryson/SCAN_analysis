@@ -2,7 +2,7 @@
 close all
 BCI2KPath = '/Users/nkb/Documents/NCAN/BCI2000tools';
 addpath(genpath('/Users/nkb/Documents/NCAN/code/SCAN_analysis/matlab'))
-bci2ktools(BCI2KPath);Subject = 'BJH071'; % String of Subject Name
+bci2ktools(BCI2KPath);Subject = 'BJH076'; % String of Subject Name
 user = expanduser('~'); % Get local path for interoperability on different machines, function in my tools dir. 
 DataPath = sprintf("%s/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/%s",user,Subject); % Path to data
 
@@ -90,11 +90,17 @@ end
 
 function [DATA1,DATA2,STATES1,STATES2] = alignSecondaryData(data1, data2,states1,states2)
 sync1 = double(states1.DC04);
-sync1 = abs(sync1-mean(sync1))/max((sync1));
+if std(double(sync1)) < 100
+    sync1 = states1.StimulusCode;
+    sync1 = double(sync1 > 0);
+    thresh1 = 0.75;
+else
+    sync1 = abs(sync1-mean(sync1))/max((sync1));
+    thresh1 = 3*std(sync1);
+end
 sync2 = double(states2.DigitalInput4);
 sync2 = abs(sync2-mean(sync2))/max((sync2));
 
-thresh1 = 3*std(sync1);
 thresh2 = 3*std(sync2);
 
 x1 = detectThresholdCrossing(sync1, thresh1, 3500);

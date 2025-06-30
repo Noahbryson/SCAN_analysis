@@ -7,9 +7,6 @@ from VERA_PyBrain.modules.VERA_PyBrain import PyBrain
 from src.functions.graphics import circular_gradient3,hex2RGB,targetColorSwatch,default_gradient, circle_gradient_key
 import platform
 
-
-
-
 localEnv = platform.system()
 userPath = Path(os.path.expanduser('~'))
 if localEnv == 'Windows':
@@ -36,7 +33,7 @@ else:
 
 bp = dataPath/subject/'brain'/f'{brainType}.mat'
 try:
-      brain = PyBrain(bp,subject=subject,brainName=brainType)
+      brain = PyBrain(bp,subject=subject,brainName=brainType,loadMapping=True)
       print(f'\nLoaded {brainType} for {subject} from {bp}\n')
       
 except:
@@ -46,15 +43,7 @@ except:
 electrodemap,regionsLocs = brain._get_ROI_map()
 centralSulcusInfo = [[i,brain.regionColors[j]] for j,i in enumerate(brain.regions) if i.lower().find('central')>-1]
 
-side = 'both'
-
-# traj_vol = brain.plot_all_traj()
-# traj_path = boxPath/r'Brunner Lab/Writing/manuscripts/SCAN ABLATION 2025/figures/FIG1/traj'
-# brain.glassbrain_figure_export(traj_vol,savepath=traj_path,figname='trajectories')
-# traj_vol.close()
 side = 'L'
-
-# brain.projection_2D('xy',[],'coronal')
 
 a = SCAN_SingleSessionAnalysis(dataPath,subject,session,remove_trajectories=['OR'],
       load=loadData,plot_stimuli=False,gammaRange=gammaRange,refType=reref)
@@ -63,17 +52,15 @@ sig_chans, nonsig_chans, channel_descriptions = a.returnSignificantLocations(p_v
 cmap_resolution=1
 tuning_colors = default_gradient(cmap_resolution)
 tuning,chan_tuning_colors,angle_key, color_array = a.somatotopic_tuning(r_sq,tuning_colors=tuning_colors,plotCMAP=False,cmapResolution=cmap_resolution)
-# for i,j in tuning_colors.items():
-      # print(i,j)
+
 colorLab = list(angle_key.keys())
 labColor = [i['color'] for i in angle_key.values()]
 
 tuning_path = boxPath/r'Brunner Lab/Writing/manuscripts/SCAN ABLATION 2025/figures/FIG2/tuning'
+tuning_path = boxPath/r'/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/Writing/manuscripts/SCAN ABLATION 2025/figures/2.Multi-modal Mapping/tuning'
 t_ = [[i,j['color']] for i,j in angle_key.items()]
 t_names = [i[0] for i in t_]
 t_colors = [i[1] for i in t_]
-
-
 
 effect_of_interest = r_sq
 effect_name = 'r_sq'
@@ -81,14 +68,6 @@ datasubset = sig_chans
 allChans = tuning['channel'].to_list()
 allChans_idx = brain._getElectrodeIndexFromLabels(labels=allChans)
 shared_rep = a.shared_representation(effect_of_interest,sig_chans)
-
-# intereffectors, channel_classifcation, nonspecifics = a.parse_results_for_triple_responders(d_res,datasubset,save=save,label='significant',thresh=1,comparison='')
-# intereffectors = [i.replace('_','') for i in intereffectors]
-# intereffector_locs = [electrodemap[i] for i in intereffectors]
-# print("intereffectors (cohen's d)")
-# for i,j in zip(intereffectors,intereffector_locs):
-#       print(i,': ',j)      
-
 intereffectors, channel_classifcation, nonspecifics = a.parse_results_for_triple_responders(effect_of_interest,datasubset,save=save,label='significant',thresh=.1,comparison='')
 intereffectors = [i.replace('_','') for i in intereffectors]
 nonspecifics = [i.replace('_','') for i in nonspecifics]
@@ -98,6 +77,9 @@ intereffector_locs = [electrodemap[i] for i in intereffectors]
 print('intereffectors')
 for i,j in zip(intereffectors,intereffector_locs):
       print(i,': ',j)
+      
+print("','".join(intereffectors))
+      
 print('\n\nnonspecifics')
 non_specific= ['inter','foot-face','hand-face','hand-foot']
 multiMotor = [[i,j] for i,j in channel_classifcation.items() if j in non_specific]
@@ -106,19 +88,13 @@ for i,j in zip(multiMotor,nonspecifics_locs):
       if j.find('central')>-1:
             print(i[0],': ',j,' ',i[1])
             targets.append(i[0])
-# targetIdx = brain._getElectrodeIndexFromLabels(labels=intereffectors)
-# targetIdx.extend( brain._getElectrodeIndexFromLabels(labels=nonspecifics))
 
 plottingRegions = []
 for idx,i in enumerate(brain.regions):
       if i.lower().find('central')>-1:
-            # plottingRegions.append([i,brain.regionColors[idx]])
-            # plottingRegions.append([i,[.7,.09,.09]])
-            # plottingRegions.append([i,[1,.7,.09]])
             plottingRegions.append([i,[.71,.31,.01]])
       else:
             plottingRegions.append([i,[.9,.9,.9]])
-            # plottingRegions.append([i,[.6,.6,.6]])
 
 fig1=False
 if fig1:
@@ -146,7 +122,7 @@ if fig1:
             electrodeSubset=targetIdx,significant=False,colorMap=[SZ_colors[i] for i in SZ_channels])
       sz_vol.show()
       
-fig2_brains = False
+fig2_brains = True
 if fig2_brains:            
       plottingRegions = []
       for idx,i in enumerate(brain.regions):
@@ -159,6 +135,7 @@ if fig2_brains:
 
       """Shared Representation"""
       sharedRep_path = boxPath/r'Brunner Lab/Writing/manuscripts/SCAN ABLATION 2025/figures/FIG2/shared_rep'
+      sharedRep_path = boxPath/r'Brunner Lab/Writing/manuscripts/SCAN ABLATION 2025/figures/2.Multi-modal Mapping/shared_rep'
       sharedRep_vol=brain._generateAxis()
       sharedRep_vol=brain._plotBrainRegions(sharedRep_vol,regions=[i[0] for i in plottingRegions], 
                                     colors=[i[-1] for i in plottingRegions],opacity=0.7,side=side)
@@ -190,6 +167,7 @@ if fig2_brains:
       rma_vol,coords=brain._plotBrainVolume(rma_vol,0.05,[1,1,1],side=side)
       rma_vol=brain._plotBrainRegions(rma_vol,regions=[i[0] for i in centralSulcusInfo], colors=[i[-1] for i in centralSulcusInfo],opacity=.02,side=side)
       RMA_path = boxPath/r'Brunner Lab/Writing/manuscripts/SCAN ABLATION 2025/figures/FIG2/RMA'
+      RMA_path = boxPath/r'Brunner Lab/Writing/manuscripts/SCAN ABLATION 2025/figures/2.Multi-modal Mapping/RMA'
       
       targets = [i for i in intereffectors if i.find('KL')>=0]
       targetIdx = brain._getElectrodeIndexFromLabels(labels=targets)
@@ -215,5 +193,25 @@ if fig2_brains:
       rma_vol.show_axes()
       rma_vol= brain.opaquebrain_projection_figure_export(rma_vol,RMA_path,'RMA_tuning',data=shared_rep.rename({'Shared Rep':'metric','Significant':'p'},axis=1),
             electrodeSubset=targetIdx,significant=True,colorMap=[chan_tuning_colors[i] for i in targets])
+      rma_vol.close()
+      
+      
+      
+      """All RMA Tuning"""
+      from src.modules.colorOps import colorOps
+      tcolor = colorOps().cmyk2rgb([4.17, 23.72, 0.06,0])
+      targets = intereffectors
+      targetIdx = brain._getElectrodeIndexFromLabels(labels=targets)
+      
+      rma_vol=brain._generateAxis()
+      rma_vol=brain._plotBrainRegions(rma_vol,regions=[i[0] for i in plottingRegions], 
+            colors=[i[-1] for i in plottingRegions],opacity=0.7,side=side)
+      rma_vol=brain._plotBrainRegions(rma_vol,regions=[i[0] for i in centralSulcusInfo], 
+            colors=[i[-1] for i in centralSulcusInfo],opacity=1,side=side)
+      rma_vol.show_axes()
+      temp = shared_rep.rename({'Shared Rep':'metric','Significant':'p'},axis=1)
+      temp['metric'] = [.2 for _ in range(len(temp))]
+      rma_vol= brain.opaquebrain_projection_figure_export(rma_vol,RMA_path,'RMA_locs',data=temp.rename({'Significant':'p'},axis=1),
+            electrodeSubset=targetIdx,significant=True,colorMap=[tcolor for _ in targets])
       rma_vol.close()
 print(0)

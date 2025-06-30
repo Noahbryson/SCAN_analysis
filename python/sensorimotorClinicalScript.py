@@ -15,7 +15,7 @@ if localEnv == 'Windows':
 else:
       dataPath = userPath/"Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCREENING"
      
-subject = 'BJH069'
+subject = 'BJH076'
 
 targetRegions = ['AV','LP','CM','MD','VL','PU','PuM','PuL','PuI','LGN',
                   'MGN','PuA','CL','VM','LP','LD','VA','central']

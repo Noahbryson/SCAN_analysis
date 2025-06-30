@@ -40,8 +40,7 @@ print(subject)
 for i in sorted(set(brain.regions)):
       ii = str.replace(i,'ctx-','')
       print(ii)
-thalamElec, thalamIdx = brain._isolateTargetElectrodes(labels=targetRegions)
-print(thalamElec)
+
 # v1 = brain._generateAxis(1)
 # v1=brain._plotBrainVolume(v1,0.05,color=[1,1,1])
 # v1=brain._ColorBrainRegion(v1,)
@@ -61,7 +60,7 @@ for i,k in enumerate(sensationResponse):
             col = 0
       vol.subplot(row,col)
       vol = brain._plotBrainVolume(vol,0.05,color=[1,1,1],side='l')
-      brain._plotEffectOnVolume(vol,sensationResponse[k],significant=True,electrodeSubset=thalamIdx)
+      brain._plotEffectOnVolume(vol,sensationResponse[k],significant=True,electrodeSubset=[])
       vol.add_title(k)
       col = col +1 
 

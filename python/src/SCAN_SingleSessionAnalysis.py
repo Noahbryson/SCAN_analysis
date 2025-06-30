@@ -15,7 +15,7 @@ from sklearn.cluster import KMeans
 from .functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, geometric_mean,kde,euclidean_distance, signed_cross_correlation, angle_3D, angle_distances_3D
 from .modules.stimulusPresentation import format_Stimulus_Presentation_Session
 from .modules.response_datastructs import ERP_struct, export_ERP_Obj
-
+from VERA_PyBrain.modules.VERA_PyBrain import PyBrain
 class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
     def __init__(self,path:str or Path,subject:str,sessionID:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False,gammaRange=[65,115],refType: str='common',remove_trajectories:list[str]=[]) -> None: # type: ignore
         """
@@ -48,7 +48,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         if os.path.exists(self.main_dir/self.subject/'muscle_mapping.csv'):
             with open(self.main_dir/self.subject/'muscle_mapping.csv', 'r') as fp:
                 reader = csv.reader(fp)
-                self.muscleMapping = {rows[0]:rows[1:] for rows in reader}
+                self.muscleMapping: dict = {rows[0]:rows[1:] for rows in reader}
         else:
             self.muscleMapping = {'1_Hand':['wristExtensor', 'ulnar'], '3_Foot':['TBA'],'2_Tongue':['tongue']}
         self.subjectDir = path / subject / sessionID
@@ -635,7 +635,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         return output
         
 
-    def _EMG_activity_epochs(self,testplots=False):
+    def _EMG_activity_epochs(self,testplots=False) -> dict:
         output = {}
         for m_type, data in self.task_epochs.items():
             if m_type.find('rest') <0:
@@ -1398,6 +1398,9 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         inter = [i for i,j in classification.items() if j=='inter']
         multiMotor = [i for i,j in classification.items() if j in non_specific]
         return inter,classification, multiMotor
+
+    
+
 
 def epoch_powerAverage(a,f_slice = []):
     averagePower = np.empty(len(a))

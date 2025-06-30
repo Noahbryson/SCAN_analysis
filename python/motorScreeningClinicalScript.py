@@ -16,16 +16,17 @@ else:
     dataPath = userPath/"Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo"
 
 
-subject = 'BJH041'
+subject = 'BJH076'
 gammaRange = [70,170]
 brainType = "MNIbrain_destrieux"
-session = 'pre_ablation'
-session = 'post_ablation'
-
+brainType = "MNIbrain"
+# session = 'pre_ablation'
+# session = 'post_ablation'
+session = 'aggregate'
 aggpath = dataPath / 'Aggregate' / f'{subject}_{session}'
 
 laplacian = False
-bipolar = True
+bipolar = False
 loadData=True
 save = True
 side = 'both'
@@ -40,6 +41,7 @@ else:
 bp = dataPath/subject/'brain'/f'{brainType}.mat'
 # brain = PyBrain(bp,subject=subject,brainName=brainType)
 # brain._makeBipolarElectrodes()
+# brain = PyBrain(bp,subject=subject,brainName=brainType,bipolar=bipolar,laplacian=laplacian)
 try: #Generation of brain if the file exists, if not data will be parsed as is
     brain = PyBrain(bp,subject=subject,brainName=brainType,bipolar=bipolar,laplacian=laplacian)
     print(f'\nLoaded {brainType} for {subject} from {bp}\n')
@@ -64,7 +66,7 @@ except Exception as err:
     print('brain path not valid')
 
 
-a = SCAN_SingleSessionAnalysis(dataPath,subject,session,remove_trajectories=['OR'],
+a = SCAN_SingleSessionAnalysis(dataPath,subject,session,remove_trajectories=[],
     load=loadData,plot_stimuli=False,gammaRange=gammaRange,refType=reref)
 # a.run_ERP_processinsg(plot=True,save=True,show=False)
 r_sq, p_vals, U_res, d_res,roc_res = a.task_power_analysis(save=save)
@@ -98,12 +100,12 @@ t_ = [[i,j['color']] for i,j in angle_key.items()]
 t_names = [i[0] for i in t_]
 t_colors = [i[1] for i in t_]
 allChans = tuning['channel'].to_list()
-allChans_idx = brain._getElectrodeIndexFromLabels(labels=allChans)
 shared_rep = a.shared_representation(effect_of_interest,sig_chans)
 
 
-showFlag = False
+showFlag = True
 if brainFlag and showFlag:
+    allChans_idx = brain._getElectrodeIndexFromLabels(labels=allChans)
     v1=brain._generateAxis(1)
     v1,_=brain._plotBrainVolume(v1,0.05,[1,1,1],side=side)
     v1=brain._plotBrainRegions(v1,regions=[i[0] for i in centralSulcusInfo], colors=[i[-1] for i in centralSulcusInfo],opacity=.2,side=side)
@@ -115,15 +117,20 @@ if brainFlag and showFlag:
     for i,j in zip(intereffectors,intereffector_locs):
             print(i,': ',j)
     print('\n\nnonspecifics')
+    # non_specific= ['inter','foot-face','hand-face','hand-foot']
+    # multiMotor = [[i,j] for i,j in channel_classifcation.items() if j in non_specific]
+    # targets = []
+    # for i,j in zip(multiMotor,nonspecifics_locs):
+    #         # if j.find('precentral')>-1 or j.find('S-central')>-1:
+    #         if j.find('central')>-1:
+    #             print(i[0],': ',j,' ',i[1])
+    #             targets.append(i[0])
     non_specific= ['inter','foot-face','hand-face','hand-foot']
     multiMotor = [[i,j] for i,j in channel_classifcation.items() if j in non_specific]
     targets = []
-    for i,j in zip(multiMotor,nonspecifics_locs):
-            # if j.find('precentral')>-1 or j.find('S-central')>-1:
-            if j.find('central')>-1:
-                print(i[0],': ',j,' ',i[1])
-                targets.append(i[0])
-    
+    for i in (multiMotor):
+        print(i[0],': ',i[1])
+        targets.append(i[0])
     
     targetIdx = brain._getElectrodeIndexFromLabels(labels=intereffectors)
     targetIdx.extend( brain._getElectrodeIndexFromLabels(labels=nonspecifics))
@@ -151,6 +158,7 @@ if brainFlag and showFlag:
     
     
     
+    # rma_vol.show()
     v1.show()
 else:
     print('intereffectors')

@@ -3,19 +3,22 @@ import csv
 from pathlib import Path
 import scipy.io as scio
 import scipy.stats as stats
+from scipy.optimize import curve_fit
+from sklearn.metrics import r2_score
 import pandas as pd
 from .functions.filters import *
+import matplotlib.pyplot as plt
 import matplotlib.patches as patch
 import seaborn as sns
 import distinctipy
 import math
 import pickle
 import seaborn as sns
-from src.functions.stat_methods import paired_two_sample
-
+from src.functions.stat_methods import paired_two_sample, nonlinear_fit_permutation_test,pdist2
+from VERA_PyBrain.modules.VERA_PyBrain import PyBrain
 # from sklearn import metrics
 # from sklearn.cluster import KMeans
-# from .functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, geometric_mean,kde,euclidean_distance, signed_cross_correlation, angle_3D, angle_distances_3D
+from .functions.stat_methods import euclidean_distance
 from .modules.response_datastructs import ERP_struct, export_ERP_Obj, load_ERP_Obj
 
 class SCAN_group_analysis():
@@ -25,11 +28,7 @@ class SCAN_group_analysis():
             self.subjectDirs = {sub:dataDir/sub for sub in subjectList}
             self.colorPalletBest = [(62/255,108/255,179/255), (27/255,196/255,225/255), (129/255,199/255,238/255),(44/255,184/255,149/255),(0,129/255,145/255), (193/255,189/255,47/255),(200/255,200/255,200/255)]
             self.movements = ['Hand','Foot','Tongue']
-            
-            
-            
-            
-      
+
       def LoadERPs(self,erp_type:str='gamma'):
             self.ERPs = {}
             for k,v in self.subjectDirs.items():
@@ -81,12 +80,9 @@ class SCAN_group_analysis():
             ax[-1][0].set_xlabel('Time (s)')
             ax[-1][2].set_xlabel('Time (s)')
             ax[-1][1].set_xlabel('Time (s)')
-            # for a in ax.flat:
-                  # a.legend()
-            
             return 0            
             
-      def load_EMG_isolation(self):
+      def load_EMG_isolation(self)-> None:
             self.EMG_isolation = {}
             for k,v in self.subjectDirs.items():
                   dir_contents = os.listdir(v)
@@ -96,32 +92,55 @@ class SCAN_group_analysis():
                         x = pickle.load(fp)
                   self.EMG_isolation[k] = x
                   
-      def __load_rsq(self):
+      def load_rsq(self,reference_session) -> pd.DataFrame:
+            """
+            load_rsq _summary_
+
+            Returns:
+                  _type_: _description_
+            """
             rsqs = pd.DataFrame()
             for k,v in self.subjectDirs.items():
                   df = pd.read_csv(v/f'{k}_rsq.csv')
                   df=df.set_index('channel')
                   df['session'] = k
                   rsqs = pd.concat([rsqs,df])
-            return rsqs.reset_index()      
-      def __load_channnel_labels(self,reference_session):
+                  
+            rsqs.reset_index(inplace=True)
+            channel_labels, _ = self.load_channnel_labels(reference_session)
+            data = rsqs.merge(channel_labels,on='channel')
+            data['class']=data['class'].str.replace('face','tongue')
+            return data      
+      def load_channnel_labels(self,reference_session)-> tuple:
             p = self.subjectDirs[reference_session]
             labels = pd.read_csv(p/'channel_classifications.csv')
             labels = labels.astype({'significant':'bool'})
             classes = sorted(list(set(labels['class'])))
             return labels, classes
       
-      def compare_shared_rep(self,reference_session,compare_session,significant=True,region_search_strs=[],paired=False):
+      def compare_shared_rep(self,reference_session,compare_session,significant=True,region_search_strs=[],paired=False,channel_markers=[])->pd.DataFrame:
+            """
             
-            rsqs = self.__load_rsq()
-            channel_labels, chan_classes = self.__load_channnel_labels(reference_session)
+            """
+            
+            data = self.load_rsq(reference_session)
+            channel_labels, chan_classes = self.load_channnel_labels(reference_session)
             regions=set(channel_labels['region'].to_list())
-            data = rsqs.merge(channel_labels,on='channel')
             data['shared_rep'] = data.apply(lambda x: shared_rep(x['Hand'],x['Tongue'],x['Foot']),axis=1)
+            
+            chan_classes = np.unique(data['class'])
+            nonspec = [i for i in chan_classes if i.find('-')>-1]
+            chan_classes = [i for i in chan_classes if i.find('-')==-1]
+            chan_classes.append('non-specific')
+            locs = data['class'].isin(nonspec)
+            data.loc[locs,'class'] = 'non-specific'
             if len(region_search_strs) > 0:
                   subregions = []
+                  subregions = []
+                  if isinstance(region_search_strs,str):
+                        region_search_strs = [region_search_strs]
                   for i in region_search_strs:
-                        subregions.extend([s for s in regions if region_search_strs in s])
+                        subregions.extend([s for s in regions if i in s])
                   subregions = np.unique(subregions).tolist()
                   data['target_region'] = data['region'].apply(lambda x: x in subregions)
                   data = data.loc[data['target_region']==True]
@@ -138,11 +157,17 @@ class SCAN_group_analysis():
                               a = df.loc[data['session'] == reference_session]
                               b = df.loc[data['session'] == compare_session]
                               
-                              res = paired_two_sample(a['shared_rep'].to_numpy(),b['shared_rep'].to_numpy(),ax)
-                              stats[i] = res
+                              res = paired_two_sample(a['shared_rep'].to_numpy(),b['shared_rep'].to_numpy(),ax,plot_mean=False)
+                              a_sub = a[a['channel'].isin(channel_markers)]
+                              b_sub = b[b['channel'].isin(channel_markers)]
+                              ax.scatter([0 for _ in range(len(a_sub))],a_sub['shared_rep'].to_numpy(),marker='*',color=(1,1,0))
+                              ax.scatter([1 for _ in range(len(b_sub))],b_sub['shared_rep'].to_numpy(),marker='*',color=(0,1,1))
+                              stats[i] = res[0]
                               ax.set_xticks([0,1])        
                               ax.set_xticklabels([reference_session,compare_session])
-                              ax.set_title(i)        
+                              ax.set_title(i)   
+                              if res[0].pvalue < 0.05:
+                                    ax.text(.4,1.1*np.max([data['shared_rep']]),'*')     
                         else:
                               print(f'no {i} tuned channels')
                               rm_cols.append(ax)   
@@ -158,10 +183,12 @@ class SCAN_group_analysis():
                   sns.stripplot(data=data,x='class',y='shared_rep',hue='session',ax=ax)      
             data_clusters = cluster_rsq_by_label(data,significant)
             fig.suptitle('Change in Shared Representation')
-      def compare_tuning(self,reference_session,compare_session,significant=True,region_search_strs=[],paired=False,effect='Magnitude'):
+            return data
+      
+      def compare_tuning(self,reference_session,compare_session,significant=True,region_search_strs=[],paired=False,effect='Magnitude')->None:
             
-            rsqs = self.__load_rsq()
-            channel_labels, chan_classes = self.__load_channnel_labels(reference_session)
+            rsqs = self.load_rsq()
+            channel_labels, chan_classes = self.load_channnel_labels(reference_session)
             regions=set(channel_labels['region'].to_list())
             data = rsqs.merge(channel_labels,on='channel')
             data[['tuning','Magnitude','Angle']] = data.apply(lambda x: tuning(x['Hand'],x['Tongue'],x['Foot']),axis=1,result_type='expand')
@@ -169,8 +196,10 @@ class SCAN_group_analysis():
             data['Angle'] = data['Angle'].astype('float').copy()
             if len(region_search_strs) > 0:
                   subregions = []
+                  if isinstance(region_search_strs,str):
+                        region_search_strs = [region_search_strs]
                   for i in region_search_strs:
-                        subregions.extend([s for s in regions if region_search_strs in s])
+                        subregions.extend([s for s in regions if i in s])
                   subregions = np.unique(subregions).tolist()
                   data['target_region'] = data['region'].apply(lambda x: x in subregions)
                   data = data.loc[data['target_region']==True]
@@ -219,14 +248,16 @@ class SCAN_group_analysis():
             
       def compare_rsq(self,reference_session,compare_session,significant=True,region_search_strs=[],paired=False):
             
-            rsqs = self.__load_rsq()
-            channel_labels, chan_classes = self.__load_channnel_labels(reference_session)
+            rsqs = self.load_rsq()
+            channel_labels, chan_classes = self.load_channnel_labels(reference_session)
             regions=set(channel_labels['region'].to_list())
             data = rsqs.merge(channel_labels,on='channel')
             if len(region_search_strs) > 0:
                   subregions = []
+                  if isinstance(region_search_strs,str):
+                        region_search_strs = [region_search_strs]
                   for i in region_search_strs:
-                        subregions.extend([s for s in regions if region_search_strs in s])
+                        subregions.extend([s for s in regions if i in s])
                   subregions = np.unique(subregions).tolist()
                   data['target_region'] = data['region'].apply(lambda x: x in subregions)
                   data = data.loc[data['target_region']==True]
@@ -273,7 +304,153 @@ class SCAN_group_analysis():
             # data_clusters = cluster_rsq_by_label(data,significant)
             fig.suptitle('Change in r^2 due to ablation')
             return 0
-def cluster_rsq_by_label(data,significant):
+      def get_subject_session(self,target_session) -> pd.DataFrame:
+            data = self.load_rsq(target_session)
+            return data[data['session']==target_session]
+
+def ablation_effect(brain:PyBrain, effect:pd.DataFrame, effect_name:str,
+      volume:np.ndarray, volumeLabel:str, ROIs: list,centroid: bool=True,plot: bool=True)-> tuple:
+      
+      pre = effect.loc[effect['session'].str.find('pre') >= 0].set_index('channel')
+      post = effect.loc[effect['session'].str.find('post') >= 0].set_index('channel')
+      out_effect = f'delta {effect_name}'
+      cols = pre.columns.to_list()[3:7]
+      cols.append(pre.columns[8])
+      df = pre[cols].copy()
+      df.loc[:,out_effect] = post[effect_name] - pre[effect_name]
+      volume_effect_distance(brain, df.reset_index(), out_effect,volume, volumeLabel, ROIs,centroid,plot)
+
+
+def volume_effect_distance(brain:PyBrain, effect:pd.DataFrame, effect_name:str,
+      volume:np.ndarray, volumeLabel:str, ROIs: list,centroid: bool=False,plot: bool=False) -> tuple:     
+      idxs = effect['region'].apply(lambda x: np.any([1 for i in ROIs if x.find(i) > -1]))
+      effectROI = effect.loc[idxs]
+      res = effectROI.apply(lambda x: brain.electrodeNamesKey[x['channel']],axis=1)
+      effectROI.loc[:,'vera'] = res
+      res = effectROI['vera'].apply(lambda x: brain.electrodes.Location[brain.electrodes.Name.index(x)])
+      effectROI.loc[:,'coords'] = res
+      # chan_classes = np.unique(effectROI['class'])
+      # nonspec = [i for i in chan_classes if i.find('-')>-1]
+      # chan_classes = [i for i in chan_classes if i.find('-')==-1]
+      # chan_classes.append('non-specific')
+      # locs = effectROI['class'].isin(nonspec)
+      # effectROI['class_old'] = effectROI['class']
+      # effectROI.loc[locs,'class'] = 'non-specific'
+      
+      
+      center = np.mean(volume,axis=0)
+      centroids = {volumeLabel:center}
+      
+      tag = f'delta_r {volumeLabel}'
+      if centroid:
+            res = effectROI.apply(lambda x: euclidean_distance(x['coords'],center),axis=1)
+            effectROI.loc[:,tag] = res
+      else:
+            res = pdist2(np.vstack(effectROI['coords'].to_numpy()),np.array(volume),num_mins=1)
+            distances = res[:,0]
+            # mean_dists = np.mean(res,axis=1)
+            # distances[np.where(mean_dists < 4)[0]] = 0
+            effectROI.loc[:,tag] = distances
+      classes = ['Hand','Foot','Tongue']
+      popt,pconv = curve_fit(inverse_r2,effectROI[tag],effectROI[effect_name]) 
+      res = nonlinear_fit_permutation_test(effectROI[tag],effectROI[effect_name],inverse_r2,popt)
+      idx = effectROI['class'].isin([i.lower() for i in classes])
+      subset = effectROI.loc[idx]
+      popt,pcov = curve_fit(inverse_r2,subset[tag],subset[effect_name]) 
+      res2 = nonlinear_fit_permutation_test(subset[tag],subset[tag],inverse_r2,popt)
+      if plot:
+            fig = plt.figure()
+            a = plt.axes()
+            a = fig.add_axes(a)
+            import seaborn as sns
+            sns.scatterplot(data=effectROI,x=tag,y=effect_name,hue='class',ax=a)
+            r_vals = np.linspace(1,effectROI[tag].max(),100)
+            rsq_decay = inverse_r2(r_vals,popt[0],popt[1])
+            rsq_decay2 = inverse_r2(r_vals,popt[0],popt[1])
+            a.set_ylim([-0.5, 1])
+            a.plot(r_vals,rsq_decay)
+            a.plot(r_vals,rsq_decay2)
+            a.annotate(f'$R^2$={round(res.result,4)}\np={round(res.pvalue,5)}',(0.7,0.7),xycoords='axes fraction')
+            a.annotate(f'somatotopic $R^2$={round(res2.result,4)}\np={round(res2.pvalue,5)}',(0.7,0.4),xycoords='axes fraction')
+      
+      return centroids, effectROI
+
+
+
+def compute_effect_centroid(brain:PyBrain, effect:pd.DataFrame, ROIs: list,plot: bool=False) -> tuple:
+      
+      # idxs = effect['region'].apply(lambda x: np.any([1 for i in ROIs if x.find(i) > -1]))
+      effectROI = effect.loc[effect['region'].apply(lambda x: np.any([1 for i in ROIs if x.find(i) > -1]))].copy()
+      # res = effectROI.apply(lambda x: brain.electrodeNamesKey[x['channel']],axis=1)
+      effectROI.loc[:,'vera'] = effectROI.apply(lambda x: brain.electrodeNamesKey[x['channel']],axis=1).copy()
+      # effectROI.loc[:,'vera'] = res
+      # res = effectROI['vera'].apply(lambda x: brain.electrodes.Location[brain.electrodes.Name.index(x)])
+      effectROI.loc[:,'coords'] = effectROI['vera'].apply(lambda x: brain.electrodes.Location[brain.electrodes.Name.index(x)]).copy()
+      # effectROI.loc[:,'coords'] = res
+      classes = ['Hand','Foot','Tongue']
+
+      chan_classes = np.unique(effectROI['class'])
+      nonspec = [i for i in chan_classes if i.find('-')>-1]
+      chan_classes = [i for i in chan_classes if i.find('-')==-1]
+      chan_classes.append('non-specific')
+      locs = effectROI['class'].isin(nonspec)
+      effectROI['class_old'] = effectROI['class'].copy()
+      effectROI.loc[locs,'class'] = 'non-specific'
+
+      centroids = {}
+      
+      fig,ax = plt.subplots(len(classes),1,sharex=True,sharey=True)
+      for i,a in zip(classes,ax):
+            subset = effectROI[effectROI['class'] == i.lower()]
+            center = weighted_centroid(subset[i],subset['coords'])
+            centroids[f'{i} centroid']=center
+            
+            res = effectROI.apply(lambda x: euclidean_distance(x['coords'],center),axis=1)
+            # effectROI.loc[:,f'delta_r {i}'] = res
+            
+            effectROI.loc[:,f'delta_r {i}'] =  effectROI.apply(lambda x: euclidean_distance(x['coords'],center),axis=1)
+            
+            # effectROI.plot.scatter(x=f'delta_r {i}',y=i,ax=a,hue='class')
+            import seaborn as sns
+            
+            # effectROI.plot.scatter(x=f'delta_r {i}',y=i,ax=a,hue='class')
+            sns.scatterplot(data=effectROI,x=f'delta_r {i}',y=i,ax=a,hue='class')
+            r_vals = np.linspace(1,effectROI[f'delta_r {i}'].max(),100)
+            
+            popt,pcov = curve_fit(inverse_r2,effectROI[f'delta_r {i}'],effectROI[i]) 
+            rsq_decay = inverse_r2(r_vals,popt[0],popt[1])
+            a.plot(r_vals,rsq_decay)
+            
+            
+            
+            # coeff_deter = compute_coeff_determ(effectROI[i],inverse_r2(effectROI[f'delta_r {i}'],p[0],p[1]))
+            
+            
+            # poly = np.polynomial.Polynomial.fit(effectROI[f'delta_r {i}'],effectROI[i],deg=1)
+            # y = poly(r_vals)
+            # a.plot(r_vals,y)
+            # p,v = curve_fit(inverse_r,effectROI[f'delta_r {i}'],effectROI[i]) 
+            # rsq_decay = inverse_r(r_vals,p[0],p[1])
+            # a.plot(r_vals,rsq_decay)
+                        
+            res = nonlinear_fit_permutation_test(effectROI[f'delta_r {i}'],effectROI[i],inverse_r2,popt)
+            a.annotate(f'$R^2$={round(res.result,4)}\np={round(res.pvalue,5)}',(0.7,0.7),xycoords='axes fraction')
+            idx = effectROI['class'].isin([i.lower() for i in classes])
+            subset = effectROI.loc[idx]
+            popt,pcov = curve_fit(inverse_r2,subset[f'delta_r {i}'],subset[i]) 
+            rsq_decay = inverse_r2(r_vals,popt[0],popt[1])
+            a.plot(r_vals,rsq_decay)
+            res2 = nonlinear_fit_permutation_test(subset[f'delta_r {i}'],subset[i],inverse_r2,popt)
+            a.annotate(f'somatotopic $R^2$={round(res2.result,4)}\np={round(res2.pvalue,5)}',(0.7,0.4),xycoords='axes fraction')
+            a.set_ylim([-0.5, 1])
+            a.set_xlim([2, 80])
+      if not plot:
+            plt.close(fig)
+      
+      return centroids,effectROI
+      
+      
+def cluster_rsq_by_label(data,significant)-> None:
       clusterBois = {}
       
       for i in set(data['class']):
@@ -281,11 +458,34 @@ def cluster_rsq_by_label(data,significant):
       
             
       return 0
-def shared_rep(x,y,z):
-      from math import sqrt
-      
+def shared_rep(x,y,z) -> float:
+      from math import sqrt 
       return sqrt(x**2+y**2+z**2)
-def tuning(hand,foot,tongue):
+
+def inverse_r2(r,a,c) -> float:
+      return a / (r**2) + c
+
+def inverse_r(r,a,c)->float:
+      return a/r + c
+
+def weighted_centroid(data,coords)->np.ndarray:
+      test = np.histogram_bin_edges(data,'fd');hist = np.histogram(data,bins=test)
+      weights = hist_weighting(data,hist)
+      x = np.sum(np.multiply(weights,coords)) / np.sum(weights)
+      print(x)
+      print(np.mean(coords))
+      return x
+
+def hist_weighting(data,hist)->np.array:
+      weights = [i+1 for i in range(len(hist[0]))]
+      hist_centers = hist[1][1:] - np.diff(hist[1])/2
+      out = np.zeros(np.shape(data))
+      for i,v in enumerate(data):
+            threshIdx = np.argmin(np.abs(hist_centers-v))
+            out[i] = weights[threshIdx]
+      return out
+
+def tuning(hand,foot,tongue)-> tuple:
       from src.SCAN_SingleSessionAnalysis import complex_angle
       hand_c =  np.exp(1j*np.pi/6)   * hand
       foot_c =  np.exp(1j*np.pi*3/2) * foot

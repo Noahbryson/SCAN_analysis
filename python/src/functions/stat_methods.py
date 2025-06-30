@@ -3,15 +3,21 @@ import distinctipy
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats as stats
+from scipy.stats import _result_classes
 from sklearn.neighbors import KernelDensity
+class stat_res():
+    def __init__(self,result,pvalue)->None:
+        self.result = result
+        self.pvalue = pvalue
 
-def calc_rmse(a,b):
+def calc_rmse(a,b)->float:
     N = len(a)
     rmse = np.sqrt(np.sum((a-b)**2)/N)
     return rmse
 
+    
 
-def euclidean_distance(p,q):
+def euclidean_distance(p,q)-> float:
     """euclidean_distance _summary_
 
     Args:
@@ -21,9 +27,7 @@ def euclidean_distance(p,q):
     Returns:
         dist : euclidean distance between p and q
     """
-    assert np.shape(p) == np.shape(q), "arrays must be equal length"
-    sumSquare = np.sum([(i-j)**2 for i,j in zip(p,q)])
-    return np.sqrt(sumSquare)
+    return np.linalg.norm(p-q)
 
 def kde(data):
     data = np.array(data)
@@ -200,10 +204,60 @@ def confidence_interval(a, alpha: float=0.95):
         return output
     
     
-def one_samp_ttest(data,popmean=0,test_type='two-sided'):
+def one_samp_ttest(data,popmean=0,test_type='two-sided')->_result_classes.TtestResult:
     return stats.ttest_1samp(data,popmean=popmean,alternative=test_type)
 
-def paired_two_sample(a:np.array,b:np.array,ax:plt.axes, colorPallet:list = distinctipy.get_colors(3,pastel_factor=0.5,rng=random.seed(35)), bars=False,jitter = 0.0, normalityAlpha = 0.05):
+def nonlinear_fit_permutation_test(x,y, model_function, popt, n_perm=1000)-> stat_res:
+    from scipy.optimize import curve_fit
+    r2_obs = compute_coeff_determ(y, model_function(x, *popt))
+    r2_perm = np.zeros(n_perm)
+    for i in range(n_perm):
+        y_perm = np.random.permutation(y)
+        try:
+            popt_perm, _ = curve_fit(model_function, x, y_perm, p0=popt)
+            r2_perm[i] = compute_coeff_determ(y_perm, model_function(x, *popt_perm))
+        except:
+            r2_perm[i] = 0  # or np.nan
+    p_val = (np.sum(r2_perm >= r2_obs) + 1) / (n_perm + 1)
+    
+    return stat_res(r2_obs, p_val)
+    
+def pdist2(points:np.ndarray,cloud:np.ndarray,num_mins:int=100)->tuple:
+    """
+    pdist2 _summary_
+
+    Args:
+        point (np.ndarray): points of interest (m x [x,y,z]).
+        cloud (np.ndarray): volume of interest (m x [x,y,z]). 
+        num_mins (int): the number of minimum points to return.
+            (default=1). currently deprecated
+    Returns:
+        tuple[np.ndarray,np.ndarray]: returns minimum distance and point cloud location of minimum distance
+    """
+
+    queries = points[:,None,:]
+    volume = cloud[None,:,:]
+    diffs = points[:,None,:] - cloud[None,:,:]
+    dist_sqr = np.sum(diffs ** 2,axis=2)
+    min_dist2 = np.sqrt(dist_sqr)
+    x=np.argsort(min_dist2,axis=1)
+    x_slice = np.tile(np.linspace(0,min_dist2.shape[0]-1,min_dist2.shape[0],dtype=int),[num_mins,1]).T.flatten()
+    y_slice = x[:,:num_mins].flatten()
+    dist_out = min_dist2[x_slice,y_slice].reshape(points.shape[0],num_mins)
+    # min_dist2 = np.sqrt(np.min(dist_sqr,axis=1))
+    # min_idx = np.argmin(dist_sqr,axis=1)
+    min_idxs = min_dist2
+    return dist_out
+    
+    
+def compute_coeff_determ(ydata,ymodel)-> float:
+    residuals = np.sort(ydata-ymodel)
+    ss_total = np.sum((ydata-np.mean(ydata))**2)
+    ss_residual = np.sum(residuals**2)
+    return 1 - ss_residual/ss_total
+
+
+def paired_two_sample(a:np.array,b:np.array,ax:plt.axes, colorPallet:list = distinctipy.get_colors(3,pastel_factor=0.5,rng=random.seed(35)), bars=False,jitter = 0.0, normalityAlpha = 0.05,plot_mean=True):
         
         import itertools
         import scipy.stats
@@ -250,9 +304,9 @@ def paired_two_sample(a:np.array,b:np.array,ax:plt.axes, colorPallet:list = dist
             ax.bar(0,a.mean())
             ax.bar(1,b.mean())
             
-            
-        ax.errorbar(0,a.mean(), yerr=stdev_a,markerfacecolor = colorPallet[0],  alpha=0.5, ecolor='grey', capsize=10,marker='o',ms=10)
-        ax.errorbar(1,b.mean(), yerr=stdev_b,markerfacecolor = colorPallet[1], alpha=0.5, ecolor='grey', capsize=10,marker='o',ms=10)
+        if plot_mean and not bars:  
+            ax.errorbar(0,a.mean(), yerr=stdev_a,markerfacecolor = colorPallet[0],  alpha=0.5, ecolor='grey', capsize=10,marker='o',ms=10)
+            ax.errorbar(1,b.mean(), yerr=stdev_b,markerfacecolor = colorPallet[1], alpha=0.5, ecolor='grey', capsize=10,marker='o',ms=10)
             
                 
         
