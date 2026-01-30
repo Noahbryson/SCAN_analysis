@@ -1,59 +1,67 @@
 %% Setup
 close all
+addpath('/Users/nkb/Documents/NCAN/code/MATLAB_tools')
 BCI2KPath = '/Users/nkb/Documents/NCAN/BCI2000tools';
-addpath(genpath('/Users/nkb/Documents/NCAN/code/SCAN_analysis/matlab'))
-bci2ktools(BCI2KPath);Subject = 'BJH079_postRF'; % String of Subject Name
+Subject = 'BJH069'; % String of Subject Name
 user = expanduser('~'); % Get local path for interoperability on different machines, function in my tools dir. 
-DataPath = sprintf("%s/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/%s",user,Subject); % Path to data
+if ispc
+    DataPath = sprintf("%s/Box/Brunner Lab/DATA/SCREENING/%s",user,Subject); % Path to data
+    BCI2KPath = "C:\BCI2000\BCI2000";
+else
+    DataPath = sprintf("%s/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCREENING/%s",user,Subject); % Path to data
+end
+bci2ktools(BCI2KPath);
 
 checkDir(DataPath); % check if data dir exists
 % Load Data and Metadata
 channels = loadElectrodeChannels(DataPath); % channel discription in parent subject directory, encodes they type and name of each channel
     
 dirContents = dir(DataPath);
-tgtFile = 'run'; % str for folder to parse in parent subject directory
-dataLocs = parseDir(dirContents,tgtFile,'beans');
+% dataDirs = {'sensory','motor','sensory-motor'};
+dataDirs = {'sensory-motor'};
+
+dataLocs = parseDir(dirContents,dataDirs,'.csv');
 
 
 % adjust this index for run number
-pathName = dataLocs{1}; % select file wanted if multiple runs of this experiment (ie pre and post ablation), alphabetical order
-
-for i = 1:length(dataLocs)
-
-pathName = dataLocs{i};
-tDir = sprintf('%s/%s',DataPath,pathName); % path to specific session
-files = dir(tDir); % file list
-fname = parseDir(files,'dat','_');
-fname = fname{end}; % extract fname from cell array
-[data,states,parms]=load_bcidat(strcat(tDir,'/',fname),1); % load BCI2000 dat file
-secondaryBCIflag = ismember('gUSB',channels.Var6);
-
-if secondaryBCIflag % if there are secondary EMG recordings!!!!!
-fname_sub = strsplit(fname,'.');
-tgt = fname_sub(1);
-tgt = strcat(tgt,'_1.dat');
-[data2,states2,parms2] = load_bcidat(strcat(tDir,'/',tgt{1}),1);
-[data2,states2] = resampleSecondaryData(data2,states2,parms2.SamplingRate.NumericValue,parms.SamplingRate.NumericValue,0);
-[DATA1,DATA2,STATES1,STATES2] = alignSecondaryData(data, data2,states,states2);
-[data,states] = aggregateData(DATA1,DATA2,STATES1,STATES2);
-end
-[keys,type] = labelDataChannels(data,channels); % generate labels from data and channel description
-saveDir = strcat(tDir,'/preprocessed'); % path to save dir for preprocessed files
-if ~exist(saveDir,'dir')
-    mkdir(saveDir);
-end
-
-test = writeChannelDescriptions(saveDir,keys,type,1); % write channel decriptions as a structure to .mat (v7.0) files
-states = writeStates2MAT(saveDir,states); % write states as a structure to .mat (v7.0) files
-writeStimuliCodes(parms,saveDir) % write stimuli code parm as a structure to .mat (v7.0) files -> will eventually reshape and encode other metadata like sampling rate
-writeMATwithHeader(saveDir,Subject,data,keys,1); % write labeled data as a structure to .mat (v7.0) files
+for i=1:length(dataLocs)
+    pathname = dataLocs{i}; % select file wanted if multiple runs of this experiment (ie pre and post ablation), alphabetical order
+    
+    fprintf('processing of %s starting\n',pathname)
+    tDir = sprintf('%s/%s',DataPath,pathname); % path to specific session
+    files = dir(tDir); % file list
+    fname = parseDir(files,'dat','_');
+    fname = fname{end}; % extract fname from cell array
+    [data,states,parms]=load_bcidat(strcat(tDir,'/',fname),1); % load BCI2000 dat file
+    secondaryBCIflag = ismember('gUSB',channels.Var6);
+    fname_sub = strsplit(fname,'.');
+    tgt = fname_sub(1);
+    tgt = strcat(tgt,'_1.dat');
+    if (secondaryBCIflag && pathname ~= "sensory" && isfile(strcat(tDir,'/',tgt{1})))% if there are secondary EMG recordings!!!!!
+    
+    [data2,states2,parms2] = load_bcidat(strcat(tDir,'/',tgt{1}),1);
+    [data2,states2] = resampleSecondaryData(data2,states2,parms2.SamplingRate.NumericValue,parms.SamplingRate.NumericValue,0);
+    [DATA1,DATA2,STATES1,STATES2] = alignSecondaryData(data, data2,states,states2);
+    [data,states] = aggregateData(DATA1,DATA2,STATES1,STATES2);
+    end
+    [keys,type] = labelDataChannels(data,channels); % generate labels from data and channel description
+    saveDir = strcat(tDir,'/preprocessed'); % path to save dir for preprocessed files
+    if ~exist(saveDir,'dir')
+        mkdir(saveDir);
+    end
+    
+    test = writeChannelDescriptions(saveDir,keys,type,1); % write channel decriptions as a structure to .mat (v7.0) files
+    states = writeStates2MAT(saveDir,states); % write states as a structure to .mat (v7.0) files
+    writeStimuliCodes(parms,saveDir) % write stimuli code parm as a structure to .mat (v7.0) files -> will eventually reshape and encode other metadata like sampling rate
+    writeMATwithHeader(saveDir,Subject,data,keys,1); % write labeled data as a structure to .mat (v7.0) files
+    fprintf('processing of %s finished\n',pathname)
 end
 
 
 function channels = loadElectrodeChannels(dir)
     fname = sprintf("%s/channels.csv",dir);
-    % otps = detectImportOptions(fname);
-    channels = readtable(fname);
+    otps = detectImportOptions(fname);
+    channels = readtable(fname,otps);
 end
 
 
@@ -90,21 +98,15 @@ end
 
 function [DATA1,DATA2,STATES1,STATES2] = alignSecondaryData(data1, data2,states1,states2)
 sync1 = double(states1.DC04);
-if std(double(sync1)) < 100
-    sync1 = states1.StimulusCode;
-    sync1 = double(sync1 > 0);
-    thresh1 = 0.75;
-else
-    sync1 = abs(sync1-mean(sync1))/max((sync1));
-    thresh1 = 3*std(sync1);
-end
+sync1 = abs(sync1-mean(sync1))/max((sync1));
 sync2 = double(states2.DigitalInput4);
 sync2 = abs(sync2-mean(sync2))/max((sync2));
 
+thresh1 = 3*std(sync1);
 thresh2 = 3*std(sync2);
 
-x1 = detectThresholdCrossing(sync1, thresh1, 3500);
-x2 = detectThresholdCrossing(sync2, thresh2, 3500);
+x1 = detectThresholdCrossing(sync1, thresh1, 10000);
+x2 = detectThresholdCrossing(sync2, thresh2, 10000);
 avg_offset = cast(mean(x1-x2),'int32'); 
 %avg_offset > 0 primary lags secondary, avg_offset < 0 primary leads secondary
 

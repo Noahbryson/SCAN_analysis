@@ -1,0 +1,48 @@
+
+surfPATHNAME ='/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/patients/BJH041/Freesurfer&Workbench/fs_lr/MSC18/NativeVol/fsaverage_LR32k/';
+surfFILENAME = 'MSC18.L.midthickness.32k_fs_LR.surf.gii';
+elecPATHNAME = '/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/patients/BJH041/electrodes/';
+files = dir(fullfile(elecPATHNAME,'*.dat'));
+subsetName = 'SZ-clusters';
+subset_table = readtable('/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/BJH041/brain/electrodes_Motor-Strip_cmap-clusters.xlsx');
+electrodes_main = {};
+coords_main= [];
+for i=1:length(files)
+    [n,l] = load_electrode_dat(elecPATHNAME,files(i).name);
+    electrodes_main = [electrodes_main; n];
+    coords_main = [coords_main; l];
+end
+[~,coords_main,bip_names] = seeg2bipolar(0,'Names',electrodes_main,'Locs',coords_main);
+delim='bipolar';
+electrodes_bip = bip_names;
+electrode_classes = unique(subset_table.Cluster);
+x={subset_table.Cluster(:)};x=x{1};
+fprintf('$HCWB/wb_command -foci-create clusterTest.foci ')
+for i=1:length(electrode_classes)
+    IDs=find(strcmp(x,electrode_classes{i}));
+    names = subset_table.electrodes;
+    subset = names(IDs);
+if ~isempty(subset) && ~isempty(subsetName)
+    [matches, matchloc] = ismember(subset,electrodes_bip);
+    electrodes = electrodes_bip(matchloc);
+    coords = coords_main(matchloc,:);
+end
+coords = single(coords);
+surf12 = gifti(fullfile(surfPATHNAME,surfFILENAME));
+parts = strsplit(surfFILENAME,'.');
+side = parts(2);
+[dists, idx] = pdist2(surf12.vertices,coords,'euclidean',Smallest=1);
+dist_mask = dists < 10;
+idx_out = idx(dist_mask);
+labels_out = electrodes(dist_mask);
+
+fname = join(parts(1:end-2));
+fname = strrep(fname{1},' ','_');
+
+fp = sprintf('electrodes_%s_%s_%s_%s.foci.txt',delim,subsetName,electrode_classes{i},fname);
+m_colors = table2array(subset_table(IDs,{'R','G','B'}));
+
+m_colors = round(255*m_colors);
+write_foci_2_text(fullfile(surfPATHNAME,'0.exports',fp), labels_out,surf12.vertices(idx_out,:),uint8(m_colors),'')
+fprintf('-class %s %s ../%s ',electrode_classes{i},fp,surfFILENAME)
+end

@@ -51,11 +51,13 @@ for k = 1:length(matFiles)
             val= loadedData.(names{i});
             fieldValues(i) = val;
         end
-        
-        test = struct(); test.name = names; test.r_sq = fieldValues;
+        for i=1:numel(names)
+            out(i).name = names{i};
+            out(i).r_sq = fieldValues(i);
+        end
         % Assign the loaded data to a field in the structure
         % The field name is the base file name
-        r_sq_res.(baseFileName(3:end)) = test;
+        r_sq_res.(baseFileName(3:end)) = out;
     end
 end
 if bipolarFlag
@@ -108,7 +110,6 @@ if forVideo == 1
         res = r_sq_res.(conditions{conditionIdx})(i).r_sq;
         name = r_sq_res.(conditions{conditionIdx})(i).name;
         name = strrep(name,'_','');
-        channel_Nr = find(contains(r_sq_res.(conditions{conditionIdx})(:).name, name));
         contact = locs(i,:);
         intensity = abs(res);
         colorFlag = res > 0;
@@ -132,12 +133,9 @@ else
         surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",faceAlpha);
         hold on
         locs = electrodes.e_loc;
-        for i=1:length(r_sq_res.(conditions{conditionIdx}).name)
-            name = r_sq_res.(conditions{conditionIdx}).name{i};
-            name = strrep(name,'_','');
-            channel_Nr = find(strcmp(electrodes.names, name));
-            res = r_sq_res.(conditions{j}).r_sq(i);
-            contact = locs(channel_Nr,:);
+        for i=1:length(r_sq_res.(conditions{j}))
+            res = r_sq_res.(conditions{j})(i).r_sq;
+            contact = locs(i,:);
             intensity = abs(res);
             colorFlag = res > 0;
             if colorFlag
@@ -172,12 +170,9 @@ else
         surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",faceAlpha);
         hold on
         locs = electrodes.e_loc;
-        for i=1:length(r_sq_res.(conditions{conditionIdx}).name)
-            name = r_sq_res.(conditions{conditionIdx}).name{i};
-            name = strrep(name,'_','');
-            channel_Nr = find(strcmp(electrodes.names, name));
-            res = r_sq_res.(conditions{j}).r_sq(i);
-            contact = locs(channel_Nr,:);
+        for i=1:length(r_sq_res.(conditions{j}))
+            res = r_sq_res.(conditions{j})(i).r_sq;
+            contact = locs(i,:);
             intensity = abs(res);
             colorFlag = res > 0;
             if colorFlag
@@ -209,12 +204,9 @@ else
         surf = plot3DModel(gca,brain.cortex,brain.annotation.Annotation,"FaceColor",[255,255,255]/255,"FaceAlpha",faceAlpha);
         hold on
         locs = electrodes.e_loc;
-        for i=1:length(r_sq_res.(conditions{conditionIdx}).name)
-            name = r_sq_res.(conditions{conditionIdx}).name{i};
-            name = strrep(name,'_','');
-            channel_Nr = find(strcmp(electrodes.names, name));
-            res = r_sq_res.(conditions{j}).r_sq(i);
-            contact = locs(channel_Nr,:);
+        for i=1:length(r_sq_res.(conditions{j}))
+            res = r_sq_res.(conditions{j})(i).r_sq;
+            contact = locs(i,:);
             intensity = abs(res);
             colorFlag = res > 0;
             if colorFlag

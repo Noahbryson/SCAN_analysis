@@ -1,0 +1,37 @@
+function X = detectThresholdCrossing(data, threshold, distance)
+
+X= [];
+i = 1;
+%   [...] = FINDPEAKS(...,'MinPeakHeight',MPH) finds only those peaks that
+%   are greater than the minimum peak height, MPH. MPH is a real-valued
+%   scalar. The default value of MPH is -Inf.
+%
+%   [...] = FINDPEAKS(...,'MinPeakProminence',MPP) finds peaks guaranteed
+%   to have a vertical drop of more than MPP from the peak on both sides
+%   without encountering either the end of the signal or a larger
+%   intervening peak. The default value of MPP is zero.
+%
+%   [...] = FINDPEAKS(...,'Threshold',TH) finds peaks that are at least
+%   greater than both adjacent samples by the threshold, TH. TH is a
+%   real-valued scalar greater than or equal to zero. The default value of
+%   TH is zero.
+for i=1:length(data)
+    if data(i) > threshold
+        data(i) = 1
+    else
+        data(i) = 0
+        
+    end
+[pks,locs] = findpeaks(data,'MinPeakDistance',distance,'MinPeakHeight',threshold);
+while(true)
+    if data(i) > threshold
+        X = [X; i];
+        i = i + distance;
+    else
+        i = i+1;
+    end
+    if i == length(data)
+        break
+    end
+end
+end
