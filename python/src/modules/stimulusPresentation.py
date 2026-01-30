@@ -219,12 +219,13 @@ class format_Stimulus_Presentation_Session():
             else:
                 states[state] = val
         return states
-    def plotStimuli(self,epochs):
+    def plotStimuli(self,epochs,**kwargs)->plt.axes:
         import distinctipy
         data = self.states['StimulusCode']
         t = np.linspace(0,len(data)/2000,len(data))
-        fig=plt.figure()
-        ax = plt.subplot(1,1,1)
+        
+        if not 'ax' in kwargs:
+            ax = plt.subplot(1,1,1)
         ax.plot(t,data)
         cmap = distinctipy.get_colors(len(epochs))
         for i,k in enumerate(epochs.keys()):
@@ -244,7 +245,7 @@ class format_Stimulus_Presentation_Session():
         ax.set_ylim(-1,max(data)+2)
         ax.legend()
         ax.set_title(self.name)
-        plt.show()
+        return ax
 def find_intervals(array):
     # Initialize the list of intervals
     intervals = []

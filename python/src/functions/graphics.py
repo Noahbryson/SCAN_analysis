@@ -1,7 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
-
+from matplotlib.figure import Figure
+import cmcrameri.cm as cmc
 
 def three_color_gradient(color1:tuple[float],color2:tuple[float],color3:tuple[float],steps:int=100):
       half_steps = steps // 2
@@ -66,11 +67,12 @@ import numpy as np
 from collections import defaultdict
 
 
+def adjust_color_contrast(hex_code: str, adjustment: float):
+      pass
 
 
 
-
-def colorwheel_standalone(rgb_array):
+def colorwheel_standalone(rgb_array)->None:
       plt.figure(figsize=(8, 8))
       ax = plt.subplot(121, projection='polar')
 
@@ -113,7 +115,7 @@ def targetColorSwatch(targetNames,targetColors,ax:Axes):
       return ax
 
 
-def circle_gradient_key(color_gradient,target_names,target_colors):
+def circle_gradient_key(color_gradient,target_names,target_colors)->Figure:
       # colorwheel_standalone(color_gradient)
       fig = plt.figure()
       a1 = plt.subplot(121)
@@ -129,13 +131,33 @@ def default_gradient(resolution:int):
       # Magenta / Fuchsia	#FF00FF
       
       # c1 = '#A23B96';c2 = '#5BB39C';c3 = '#FAB27A'
-      c1 = '#ff00ff'; c2 = '#ffff00'; c3 = '#00ffff'
-      # c1 = '#A23B96';c2 = '#5BB39C';c3 = '#FF9506'
+      c1 = '#5C60AA';c2 = '#7CC14E';c3 = '#EF575A'
+      c1 = '#A23B96';c2 = '#5BB39C';c3 = '#FF9506'
+      c1 = '#4363d8';c2 = '#aaffc3';c3 = '#ff00ff'
+      c1 = '#00ffff';c2 = '#aaffc3';c3 = '#ff00ff'
+      c1 = '#00ffff';c2 = '#FF9506';c3 = '#ff00ff'
+      c1 = '#4363d8';c2 = '#3cb44b';c3 = '#e6194B'
+      c1 = '#ff00ff';c2 = '#ffff00';c3 = '#00ffff'
+      c3 = '#ff00ff';c2 = '#ffff00';c1 = '#00ffff'
       # c1 = '#de24bf';c2 = '#3ba253';c3 = '#f28b0c'
-      #   c1 = '#FFFF00';c2 = '#00FFFF';c3 = '#FF00FF'
+      # c1 = '#FFFF00';c2 = '#00FFFF';c3 = '#FF00FF'
       # c1 = '#FAB27A';c2 = '#00FFFF';c3 = '#FF00FF'
-      return circular_gradient3(hex2RGB(c1),hex2RGB(c2),hex2RGB(c3),resolution=resolution,shift=30)
+      cmap = cmc.romaO
+      c = np.roll(cmap.colors,0)
+      locs = [int(30*len(c)/360),int(150*len(c)/360),int(270*len(c)/360)]
+      tColors = [c[i,:] for i in locs]
+      return c,tColors
+      # return circular_gradient3(hex2RGB(c1),hex2RGB(c2),hex2RGB(c3),resolution=resolution,shift=30)
 
+
+def stockRGB(mode: str='hex')-> tuple:
+      mode = mode.lower()
+      c1 = '#4363d8';c2 = '#3cb44b';c3 = '#e6194B'
+      match mode:
+            case 'hex':
+                  return c1,c2,c3
+            case 'rgb':
+                  return hex2RGB(c1),hex2RGB(c2),hex2RGB(c3)
 
 if __name__ == '__main__':
       c1 = '#A23B96'
@@ -144,16 +166,49 @@ if __name__ == '__main__':
       
       tNames = ['Hand','Foot','Face']
       
-      c1 = '#ff00ff'; c2 = '#0fff05'; c3 = '#00ffff'
-      colors = circular_gradient3(hex2RGB(c1),hex2RGB(c2),hex2RGB(c3),resolution=5,shift=30)
-      tColors = [hex2RGB(c1),hex2RGB(c2),hex2RGB(c3)]
-      circle_gradient_key(colors,tNames,tColors)
+      # c1 = '#ff00ff'; c2 = '#0fff05'; c3 = '#00ffff'
+      # colors = circular_gradient3(hex2RGB(c1),hex2RGB(c2),hex2RGB(c3),resolution=5,shift=30)
+      # tColors = [hex2RGB(c1),hex2RGB(c2),hex2RGB(c3)]
+      # circle_gradient_key(colors,tNames,tColors)
       
-      c1 = '#ff00ff'; c2 = '#ffff00'; c3 = '#00ffff'
-      colors = circular_gradient3(hex2RGB(c1),hex2RGB(c2),hex2RGB(c3),resolution=5,shift=30)
+      # c1 = '#ff00ff'; c2 = '#ffff00'; c3 = '#00ffff'
+      # colors = circular_gradient3(hex2RGB(c1),hex2RGB(c2),hex2RGB(c3),resolution=5,shift=30)
+      # tColors = [hex2RGB(c1),hex2RGB(c2),hex2RGB(c3)]
+      # # colors = circular_gradient3([.1,.7,.41],hex2RGB(c1),[0,0,1],resolution=5,shift=30)
+      # # tColors = [[.1,.7,.41],hex2RGB(c1),[0,0,1]]
+      # circle_gradient_key(colors,tNames,tColors)
+      # colors = default_gradient(100)
+      # circ = default_gradient(1)
+      c1 = '#4363d8';c2 = '#3cb44b';c3 = '#e6194B'
+      colors = circular_gradient3(hex2RGB(c1),hex2RGB(c2),hex2RGB(c3),resolution=1,shift=30)
       tColors = [hex2RGB(c1),hex2RGB(c2),hex2RGB(c3)]
-      # colors = circular_gradient3([.1,.7,.41],hex2RGB(c1),[0,0,1],resolution=5,shift=30)
-      # tColors = [[.1,.7,.41],hex2RGB(c1),[0,0,1]]
-      circle_gradient_key(colors,tNames,tColors)
+      # circle_gradient_key(colors,tNames,tColors)
       
+      
+      cmap = cmc.romaO
+      c = np.roll(cmap.colors,-75)
+      c = np.roll(cmap.colors,0)
+      locs = [int(30*len(c)/360),int(150*len(c)/360),int(270*len(c)/360)]
+      tColors = [c[i,:] for i in locs]
+      circle_gradient_key(c,tNames,tColors)
+      
+      # cmap = cmc.bamO
+      # c = np.roll(cmap.colors,-30)
+      # locs = [int(30*len(c)/360),int(150*len(c)/360),int(270*len(c)/360)]
+      # tColors = [c[i,:] for i in locs]
+      # circle_gradient_key(c,tNames,tColors)
+      
+      # cmap = cmc.corkO
+      # c = np.roll(cmap.colors,45)
+      # locs = [int(30*len(c)/360),int(150*len(c)/360),int(270*len(c)/360)]
+      # tColors = [c[i,:] for i in locs]
+      # circle_gradient_key(c,tNames,tColors)
+      
+      fig=plt.figure()
+      ax = fig.gca()
+      colorwheel(c,ax) 
+      
+      fig=plt.figure()
+      ax = fig.gca()
+      colorwheel(default_gradient(1),ax)      
       plt.show()  

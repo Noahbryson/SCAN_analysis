@@ -10,12 +10,14 @@ import math
 import pickle
 import seaborn as sns
 import re
+from matplotlib.figure import Figure
+import matplotlib.axes as mpl_axes
 from sklearn import metrics
 from sklearn.cluster import KMeans
 from .functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, geometric_mean,kde,euclidean_distance, signed_cross_correlation, angle_3D, angle_distances_3D
 from .modules.stimulusPresentation import format_Stimulus_Presentation_Session
 from .modules.response_datastructs import ERP_struct, export_ERP_Obj
-from VERA_PyBrain.modules.VERA_PyBrain import PyBrain
+from PyBrain.modules.VERA_PyBrain import PyBrain
 class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
     def __init__(self,path:str or Path,subject:str,sessionID:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False,gammaRange=[65,115],refType: str='common',remove_trajectories:list[str]=[]) -> None: # type: ignore
         """
@@ -70,13 +72,58 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         self.ERP_epochs = self._epochERPs()
         self.task_epochs = self._epochData('move')
         self.rest_epochs = self._epochData('rest')
-        self.motor_onset = self._EMG_activity_epochs(testplots=False)
+        self.motor_onset,self.latencies = self._EMG_activity_epochs(testplots=False)
         self.task_epochs,self.rest_epochs = self.reshape_epochs()
+        
+        
+        
+        
         if epoch_by_movement:
             self.task_epochs = self._epoch_via_EMG()
         self.rereferenceType = refType
         print('end init')
 
+    
+    def plot_session_EMG(self)-> Figure:
+        n = len(self.sessionEMG['EMG'])
+        fig, ax = plt.subplots(n+1,1,sharex=True)
+        
+        for i,a in zip(self.sessionEMG['EMG'],np.ravel(ax)[0:-1]):
+            data = self.sessionEMG['EMG'][i]
+            a.plot(data)
+            a.set_title(i)
+        
+        
+        ax[-1].plot(self.states['StimulusCode'])
+        return fig
+    
+    
+    def save_movement_latencies(self,savepath='')->None:
+        if len(savepath) == 0:
+            savepath = self.aggregate_results_dir
+        else:
+            savepath = Path(savepath)
+        df = pd.DataFrame(self.latencies)
+        cols = list(df.columns)
+        labs = [i.split('_')[-1] for i in cols]
+        df.rename({i:j for i,j in zip(cols,labs)},axis=1,inplace=True)
+        df_long = (df.stack().reset_index().rename(columns={'level_1': 'Movement', 0: 'Latency'}).drop(columns='level_0'))
+        fp = savepath / f'{self.subject}_{self.sessionID}/{self.subject}_{self.sessionID}_movement-latencies.json'
+        os.makedirs(savepath/f'{self.subject}_{self.sessionID}',exist_ok=True)
+        df_long.to_json(fp)
+    
+    def plot_movement_latencies(self)->Figure:
+        df = pd.DataFrame(self.latencies)
+        cols = list(df.columns)
+        labs = [i.split('_')[-1] for i in cols]
+        df.rename({i:j for i,j in zip(cols,labs)},axis=1,inplace=True)
+        df_long = (df.stack().reset_index().rename(columns={'level_1': 'Movement', 0: 'Latency'})
+            .drop(columns='level_0'))
+        fig,ax = plt.subplots(1,1)
+        ax.spines[['right','top','bottom']].set_visible(False)
+        sns.boxplot(data=df_long,x='Movement',y='Latency')
+        
+        
     
     
     def remove_trajectory(self,traj_labels:list[str]):
@@ -187,11 +234,11 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         output = alphaSortDict(output)
         data['sEEG'] = output
         return data
-    def processECG(self,ECG:dict):
+    def processECG(self,ECG:dict)-> dict:
         output ={}
         output['ECG'] = ECG
         return output
-    def processEMG(self,EMG:dict,plotWorkFlow=False):
+    def processEMG(self,EMG:dict,plotWorkFlow=False)-> dict:
         muscles = set([i.split('_')[0] for i in EMG.keys()])
         hold = {}
         output = {}
@@ -232,11 +279,11 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             # hold[muscle] = temp
         output['EMG'] = hold
         return output
-    def processEEG(self,EEG:dict):
+    def processEEG(self,EEG:dict)-> dict:
         output = {}
         output['EEG'] = EEG
         return output
-    def process_sEEG(self,sEEG:dict,rerefType: str,commonAvg):
+    def process_sEEG(self,sEEG:dict,rerefType: str,commonAvg)-> dict:
         
         trajectories = [key[0:2] for key in sEEG.keys()]
         trajectories = set(trajectories)
@@ -323,12 +370,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         output = alphaSortDict(output)
         return output
     
-    def _epochERPs(self):
-        """_epochERPs _summary_
-
-        Returns:
-            _type_: _description_
-        """
+    def _epochERPs(self)-> dict:
         epochInfo = self.epoch_info
         epochs = {}
         for i,j in zip(epochInfo[0],epochInfo[1]):
@@ -337,12 +379,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         epochs['info'] = ['motor onset', 'motor offset', 'rest offset']
         return epochs
     
-    def run_ERP_processing(self,show=True,close=False,save=True,gamma=True,mu=False,beta=False,plot=True):
-        """extractAllERPs _summary_
-
-        Returns:
-            _type_: _description_
-        """
+    def run_ERP_processing(self,show=True,close=False,save=True,gamma=True,mu=False,beta=False,plot=True)->None:
         if not plot:
             save = False
             show = False
@@ -585,40 +622,58 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             epochs[muscle] = signals
         return epochs
 
-    def _locateMuscleOnset(self,emg_stream,testplot=False):
-        thresh = 0.5 *np.std(emg_stream)
+    def _locateMuscleOnset(self,emg_stream,testplot=True)-> list:
+        emg_stream = emg_stream - np.min(emg_stream)
+        thresh = 0.5 *np.std(emg_stream) + np.mean(emg_stream)
         # grad = np.gradient(emg_stream,1/self.fs)
         # grad = savitzky_golay(grad,251,1)
         # grad = grad / max(abs(emg_stream))
         # deriv = np.diff(emg_stream, n=1)
         peaks_cwt = sig.find_peaks_cwt(emg_stream, widths = 500, noise_perc=thresh)
-        peak_thresh = .08*emg_stream[peaks_cwt[0]]
-        onset = peaks_cwt[0]
+        # peaks_cwt = sig.find_peaks_cwt(emg_stream, widths = 500, noise_perc=0.1)
+        peaks = [i for i in peaks_cwt if emg_stream[i] > thresh]
+        
+        xx = savitzky_golay(np.abs(np.diff(emg_stream)),501,1)
+        xx = xx / np.mean(xx) * np.mean(emg_stream)
+        deriv_thresh = np.mean(xx)-np.std(xx)*0.5
+        locs = np.where(xx > deriv_thresh)[0]
+        onset2 = np.min(locs)
+        
+        peak_thresh = .08*emg_stream[peaks[0]]
+        onset = peaks[0]
         while onset > 0 and emg_stream[onset] > peak_thresh:
             onset -= 1
-        start = int(onset - 0.5*self.fs) # shift 500ms in time to get window before movement begins
+        start = int(onset2 - 0.5*self.fs) # shift 500ms in time to get window before movement begins
         if start < 0:
             start = 0
         stop = int((4 * self.fs) + onset) # step to 4s after movement onset
         # therefor range of start:stop should be 4.5*fs, in nihon-kohden case is 9000 samples
+        
         if testplot:
             fig = plt.figure()
             ax = plt.subplot(1,1,1)
             # ax.plot(grad, label='grad')
             ax.plot(emg_stream, label='data')
+            ax.plot(np.abs(np.diff(emg_stream)*np.mean(emg_stream)))
+            
+            ax.plot(xx)
+            ax.axhline(deriv_thresh)
             # ax.plot(deriv, label='deriv')
             ax.axhline(thresh, label='thresh',c=(0,0,0))
-            ax.axvline(onset, c=(0,0,1))
+            ax.axvline(onset, c=(0,1,0))
+            ax.axvline(onset2, c=(1,0.5,0))
+            ax.axvline(start, c=(0,1,1))
             ax.axvline(onset-1000, c=(0,0,1),alpha=0.6)
             ax.axvline(onset+4.5*self.fs,c=(0,0,1))
             ax.axvline(onset-1000+4.5*self.fs,c=(0,0,1),alpha=0.6)
-            for peak in peaks_cwt:
+
+            for peak in peaks:
                 ax.axvline(peak, c=(1,0,0),label='_')
                 
             ax.legend()
-            plt.show()
-        return [start,stop]
-    def _epoch_via_EMG(self):
+            plt.close()
+        return [start,stop],onset2
+    def _epoch_via_EMG(self)->pd.DataFrame:
         if type(self.task_epochs) != pd.DataFrame:
             self.task_epochs, self.rest_epochs = self.reshape_epochs()
         output = pd.DataFrame()
@@ -635,11 +690,13 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         return output
         
 
-    def _EMG_activity_epochs(self,testplots=False) -> dict:
+    def _EMG_activity_epochs(self,testplots=False) -> tuple:
         output = {}
+        latencies = {}
         for m_type, data in self.task_epochs.items():
             if m_type.find('rest') <0:
                 epochOnsets = []
+                epochLatencies = []
                 emg = {x:data['EMG']['EMG'][x] for x in self.muscleMapping[m_type]}
                 keys = list(emg.keys())
                 numEpochs = len(emg[keys[0]])
@@ -647,13 +704,16 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                     onset = [1e10, 0]
                     for muscle in self.muscleMapping[m_type]:
                         dat = emg[muscle][i]
-                        temp = self._locateMuscleOnset(dat,testplots)
+                        temp, motorOnset = self._locateMuscleOnset(dat,testplots)
                         if temp[0] < onset[0]:
                             onset = temp
                     epochOnsets.append(onset)
+                    epochLatencies.append(motorOnset/self.fs * 1000)
                 output[m_type] = epochOnsets
+                latencies[m_type] = epochLatencies
                 
-        return output
+
+        return output,latencies
     def _validateDir(self,mainDir = '',subDir=''):
         if mainDir == '':
             if subDir != '':
@@ -759,10 +819,10 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         df[key] = df[key].apply(lambda x: sliceArray(x,slice))
         return df
     
-    def somatotopic_tuning(self,result: dict,tuning_colors:np.ndarray,cmapResolution:int=5,plotCMAP=False)-> dict:
+    def somatotopic_tuning(self,result: dict,tuning_colors:np.ndarray,plotCMAP=False)-> dict:
         from src.functions.graphics import circle_gradient_key
         
-        
+        cmapResolution = len(tuning_colors)/360
         result = self.reshapeEffect(result)
         output = {}
         color_out = {}

@@ -16,7 +16,7 @@ import os
 
 
 class ERP_struct():
-      def __init__(self,data,filterband,power,fs):
+      def __init__(self,data,filterband,power,fs)->None:
             """__init__ _summary_
 
             Args:
@@ -74,12 +74,10 @@ class ERP_struct():
                   vals.append(b)
             res = st.f_oneway(vals[0],vals[1],vals[2],axis=0)
                   
-            
-            
             return res
       
       
-      def plotAverages_per_trajectory(self,subject,timeLag:float=1,savePath:Path=False)->List[plt.Figure]:
+      def plotAverages_per_trajectory(self,subject,timeLag:float=1,savePath:Path=False,stdErr: bool=True)->List[plt.Figure]:
             figs = []
             for k,v in self.mapping.items():
                   numChan = len(v)
@@ -99,8 +97,12 @@ class ERP_struct():
                         # a.set_visible(True)
                         for j,p in enumerate(keys):
                               t = np.linspace(-timeLag,len(vals[p][0])/self.fs-timeLag,len(vals[p][0]))
+                              if stdErr:
+                                    err = vals[p][1] / math.sqrt(len(vals[p][2]))
+                              else:
+                                    err = vals[p][1]
                               ax.plot(t,vals[p][0], label=p,color=self.cs[j])
-                              plot_range_on_curve(t,vals[p][0],vals[p][1],ax,color=self.cs[j])
+                              plot_range_on_curve(t,vals[p][0],err,ax,color=self.cs[j])
                         ax.scatter(statPlot[0],statPlot[1], color=(0,0,0))
                         ax.legend()
                         ax.set_title(v[i])

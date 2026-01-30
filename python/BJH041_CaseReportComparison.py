@@ -23,7 +23,7 @@ else:
 
 subject = 'BJH041'
 brainType = "MNIbrain_destrieux"
-brainType = "brain_cortex"
+# brainType = "brain_cortex"
 laplacian = False
 bipolar = True
 
@@ -44,21 +44,32 @@ except:
 electrodemap,regionsLocs = brain._get_ROI_map()
 centralSulcusInfo = [[i,brain.regionColors[j]] for j,i in enumerate(brain.regions) if i.lower().find('central')>-1]
 side = 'L'
-brain.add_volume(lesion_volumes,['rfa','edema'])
+brain.add_volume(lesion_volumes[0],'rfa')
+brain.add_volume(lesion_volumes[1],'edema')
 brain.add_volume(lesion,'lesion',triangulate=True)
 indices = [[1, 2, 0],[1, 0, 2]]
-ax = brain._generateAxis()
-ax.show_axes_all()
+# ax = brain._generateAxis()
+# ax.show_axes_all()
 
-brain._plotBrainVolume(ax,opacity=0.01,color=[0.2,0.2,0.2])
-brain._plotAdditionalVolume(ax,'lesion',opacity=0.2,color=(255,0,0))
-print(brain.volumes['lesion'])
-brain.plot_all_traj(ax=ax)
+# brain._plotBrainVolume(ax,opacity=0.01,color=[0.2,0.2,0.2])
+# brain._plotAdditionalVolume(ax,'lesion',opacity=0.2,color=(255,0,0))
+# print(brain.volumes['lesion'])
+# brain.plot_all_traj(ax=ax)
 
-ax.close()
+# ax.close()
 
 
 a = SCAN_group_analysis(dataPath/'Aggregate',subjectSessions)
+from src.SCAN_group_analysis import plot_latencies
+method = 'cluster'
+ERP_compare = a.compare_ERP_pair(subjectSessions[0],subjectSessions[1],method=method,savePath=f'/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/Aggregate/pairs/BJH041_pre-v-post/{method}')
+
+breakpoint()
+fig = plot_latencies(a.load_latencies())
+suppPath = r'/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/Writing/manuscripts/SCAN ABLATION 2025/figures/zSUPP/reaction_time'
+os.makedirs(suppPath,exist_ok=True)
+fig.savefig(f'{suppPath}/latencies.svg')
+plt.show()
 intereffectors = ['HL3-b-4','HL4-b-5','HL8-b-9','HL9-b-10','IL1-b-2','KL10-b-11','KL11-b-12','KL12-b-13','LL5-b-6']
 ablated = ['KL11-b-12','KL12-b-13','KL13-b-14','KL14-b-15','KL15-b-16']
 ROIs = [i for i in brain.regions if i.lower().find('central')>-1]
@@ -71,39 +82,47 @@ ROI_info = [[i,brain.regionColors[j]] for j,i in enumerate(brain.regions) if i i
 # a.compare_rsq(subject_sessions[0],subject_sessions[1],region_search_strs='central',paired=True)
 
 
+plt.rcParams["figure.figsize"] = (18,10)
+suppPath = r'/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/Writing/manuscripts/SCAN ABLATION 2025/figures/zSUPP/effect_falloff'
+data= a.compare_shared_rep(subjectSessions[0],subjectSessions[1],region_search_strs=ROIs,paired=True,channel_markers = ablated,significant=False)
 
 dat = a.get_subject_session(subjectSessions[1])
-centeroids, ROI_effects = compute_effect_centroid(brain=brain,effect=dat,ROIs=ROIs,plot=True)
+centeroids, ROI_effects, fig = compute_effect_centroid(brain=brain,effect=dat,ROIs=ROIs,plot=True)
+# fig.savefig(fname=f'{suppPath}/post_ablation_centroids.svg',transparent=True,format='svg')
 dat = a.get_subject_session(subjectSessions[0])
-data= a.compare_shared_rep(subjectSessions[0],subjectSessions[1],region_search_strs=ROIs,paired=True,channel_markers = ablated,significant=False)
-centeroids, ROI_effects = compute_effect_centroid(brain=brain,effect=dat,ROIs=ROIs,plot=True)
+centeroids, ROI_effects, fig = compute_effect_centroid(brain=brain,effect=dat,ROIs=ROIs,plot=True)
+# fig.savefig(fname=f'{suppPath}/pre_ablation_centroids.svg',transparent=True,format='svg')
+
+lesionFig, lesionAx = plt.subplots(nrows=1,ncols=4,sharex=True,sharey=True,num='Lesion Effect Fallof')
+plot_effects = ['Hand','Foot','Tongue','shared_rep']
+for i,a in zip(plot_effects,lesionAx):
+      ablation_effect(brain,data,i,brain.volumes['lesion'].points,'lesion',ROIs, centroid=False,ax=a)
 plt.show()
-ablation_effect(brain,data,'Hand',brain.volumes['lesion'].points,'lesion',ROIs, centroid=False)
-ablation_effect(brain,data,'Foot',brain.volumes['lesion'].points,'lesion',ROIs, centroid=False)
-ablation_effect(brain,data,'Tongue',brain.volumes['lesion'].points,'lesion',ROIs, centroid=False)
-ablation_effect(brain,data,'shared_rep',brain.volumes['lesion'].points,'lesion',ROIs, centroid=False)
-plt.show()
+lesionFig.savefig(fname=f'{suppPath}/ablationFalloff.svg',transparent=True,format='svg')
+# lesionFig.savefig(fname=f'{suppPath}/ablationFalloff_log.svg',transparent=True,format='svg')
+plt.rcParams["figure.figsize"] = plt.rcParamsDefault["figure.figsize"]
 lesion = lesion[:,[1, 0, 2]]
 brain.add_foci(np.array([i for i in centeroids.values()]),[i for i in centeroids])
 ax = brain._generateMultiAxis(1,3,link=True)
 ax.subplot(0,0)
-brain._plotBrainVolume(ax,lighting=True,color=[0.1,0.1,0.1],opacity=0.05)
+brain.plotBrainVolume(ax,lighting=True,color=[0.1,0.1,0.1],opacity=0.05)
 brain.plot_all_traj()
 brain._plot_foci_on_volume(ax)
-brain._plotAdditionalVolume(ax,'lesion')
+brain.plotAdditionalVolume(ax,'lesion')
 brain._plotEffectOnVolume(ax,ROI_effects.rename({'Hand':'metric'},axis=1))
 ax.subplot(0,1)
-brain._plotBrainVolume(ax,lighting=True,color=[0.1,0.1,0.1],opacity=0.05)
+brain.plotBrainVolume(ax,lighting=True,color=[0.1,0.1,0.1],opacity=0.05)
 brain.plot_all_traj()
 brain._plot_foci_on_volume(ax)
-brain._plotAdditionalVolume(ax,'lesion')
+brain.plotAdditionalVolume(ax,'lesion')
 brain._plotEffectOnVolume(ax,ROI_effects.rename({'Foot':'metric'},axis=1))
 ax.subplot(0,2)
-brain._plotBrainVolume(ax,lighting=True,color=[0.1,0.1,0.1],opacity=0.05)
+brain.plotBrainVolume(ax,lighting=True,color=[0.1,0.1,0.1],opacity=0.05)
 brain.plot_all_traj()
 brain._plot_foci_on_volume(ax)
-brain._plotAdditionalVolume(ax,'lesion')
+brain.plotAdditionalVolume(ax,'lesion')
 brain._plotEffectOnVolume(ax,ROI_effects.rename({'Tongue':'metric'},axis=1))
-# plt.show(block=False)
-plt.close()
-ax.show()
+plt.show(block=False)
+
+# ax.show()
+ax.close()

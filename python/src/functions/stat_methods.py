@@ -5,10 +5,16 @@ import numpy as np
 import scipy.stats as stats
 from scipy.stats import _result_classes
 from sklearn.neighbors import KernelDensity
+import warnings
 class stat_res():
     def __init__(self,result,pvalue)->None:
         self.result = result
         self.pvalue = pvalue
+        self.corrected_p = None
+        
+    def FDR_correction(self,axis:int=0,method:str='bh')->None:
+        self.corrected_p = stats.false_discovery_control(self.pvalue,axis=axis,method=method)
+        
 
 def calc_rmse(a,b)->float:
     N = len(a)
@@ -29,18 +35,18 @@ def euclidean_distance(p,q)-> float:
     """
     return np.linalg.norm(p-q)
 
-def kde(data):
+def kde(data)->KernelDensity:
     data = np.array(data)
     data = data.reshape(len(data),1)
     return KernelDensity(kernel='gaussian').fit(data)
 
 
-def geometric_mean(pointset):
+def geometric_mean(pointset)-> float:
     
     N = len(pointset)
     return np.prod(pointset)**(1/N)
 
-def xy_angle(x,y):
+def xy_angle(x,y)-> float:
     """calculates positive angle from x-axis in x-y plane in degrees (0-360)
     Args:
         x (float): x-coordinate
@@ -52,7 +58,7 @@ def xy_angle(x,y):
     if ang < 0:
         ang = 360 + ang
     return ang
-def xz_angle(x,z):
+def xz_angle(x,z)-> float:
     """returns the vertical angle in degrees of a point in the x-z plane. Negative if z < 0, positive otherwise.
 
     Args:
@@ -65,7 +71,7 @@ def xz_angle(x,z):
     x=abs(x)
     return np.arctan(x/z) * 180 /np.pi
 
-def distanceFromPositiveAngle(angle,target):
+def distanceFromPositiveAngle(angle,target)->float:
     if angle >=0:
         distance = abs(angle - target)
     else:
@@ -76,38 +82,38 @@ def angle_distances_3D(angles, targets:list):
     horiz = distanceFromPositiveAngle(angles[0],targets[0])
     vert = distanceFromPositiveAngle(angles[1],targets[1])
     return [horiz,vert]
-def angle_3D(point):
+def angle_3D(point)->list:
     x = point[0]; y=point[1]; z = point[2]
     horiz = xy_angle(x,y)
     vert = xz_angle(x,z)
     return [horiz,vert]    
 
-def calc_rSquared(a,b):
+def calc_rSquared(a,b)-> float:
     RSS = np.sum((a-b)**2)
     TSS = np.sum((a-np.mean(a))**2)
     r_sq = 1 - (RSS/TSS)
     return r_sq
 
-def calc_cosine_similarity(a,b):
+def calc_cosine_similarity(a,b)-> float:
     num = np.dot(a,b)
     a2 = np.sqrt(sum(a**2))
     b2 = np.sqrt(sum(b**2))
     res = num  / (a2*b2)
     return res
 
-def calc_spearman(a,b):
+def calc_spearman(a,b)-> tuple:
     res,p = stats.spearmanr(a=a,b=b)
     return res, p
 
-def calc_pearson(a,b):
+def calc_pearson(a,b)-> tuple:
     res,p = stats.pearsonr(x=a,y=b)
     return res, p
 
-def mannwhitneyU(a,b):
+def mannwhitneyU(a,b)-> float:
     res = stats.mannwhitneyu(a,b)
     return res
 
-def cohendsD(a, b):
+def cohendsD(a, b)->float:
     """ compute cohen's D on two samples. Positive d indicates a > b, negative indicates b > a
         method with degrees of freedom modulation is used when the number of samples in each distribution is different
         ----------
@@ -150,7 +156,7 @@ def signed_cross_correlation(m:float or np.ndarray,r:float or np.ndarray,num_r=1
 
 
 # TODO: Implement the other statistical measures in stats module for use here. 
-def calc_ROC(a,b,plot=False):
+def calc_ROC(a,b,plot=False)-> float:
     from sklearn.metrics import roc_curve,roc_auc_score
     import matplotlib.pyplot as plt
     """
@@ -185,7 +191,7 @@ def calc_ROC(a,b,plot=False):
         plt.show()
     return auc
 
-def biserialSpearmanCorrelation(a,b):
+def biserialSpearmanCorrelation(a,b)-> float:
     # implementation of this will require broadband gamma timeseries power
     return 0
 
@@ -221,7 +227,85 @@ def nonlinear_fit_permutation_test(x,y, model_function, popt, n_perm=1000)-> sta
     p_val = (np.sum(r2_perm >= r2_obs) + 1) / (n_perm + 1)
     
     return stat_res(r2_obs, p_val)
-    
+
+
+def corr_permutation(y1:np.ndarray,y2:np.ndarray,
+        method='spearman',
+        numPerms=1000,
+        signal_blocks=15,
+        check_autocorr=True):
+    import warnings
+    n1 = y1.shape[0]
+    n2 = y2.shape[0]
+    gridx,gridy = np.meshgrid(np.arange(n1),np.arange(n2),indexing='ij')
+    indices = np.column_stack((gridx.ravel(),gridy.ravel()))
+    a = y1[indices[:,0]]
+    b = y2[indices[:,1]]
+    res = spearman_vectorized(a,b)
+    blocklen = a.shape[-1] / signal_blocks
+    if y1.shape[-1] % signal_blocks != 0:
+        sample_blocks = [[int(i*blocklen),int(i*blocklen+blocklen)] for i in range(signal_blocks-1)]
+        sample_blocks.append([int((signal_blocks-1)*blocklen),a.shape[-1]])
+        warnings.warn("Sample blocks are uneven")
+    else:
+        blocklen = np.round(blocklen,0)
+        sample_blocks = [[int(i*blocklen),int(i*blocklen+blocklen)] for i in range(signal_blocks)]
+        # sample_blocks[-1][-1] = sample_blocks[-1][-1]-1
+    shuf_res=np.zeros([numPerms,2])
+    for i in range(numPerms):
+        reindex = np.random.permutation(sample_blocks)
+        all_indices = np.concatenate([np.arange(i[0], i[1]) for i in reindex])
+        shuffled_a = a[:,all_indices]
+        temp = spearman_vectorized(shuffled_a,b)
+        shuf_res[i] = np.array([np.mean(temp),np.median(temp)])
+    plt.hist(shuf_res[:,0]);plt.axvline(np.mean(res))
+    plt.show()
+    return 0
+
+
+def binned_timeseries_compare(a:np.ndarray, b:np.ndarray, signal_blocks:int=30)->tuple:
+    blocklen = a.shape[-1] / signal_blocks
+    if a.shape[-1] % signal_blocks != 0:
+        sample_blocks = [[int(i*blocklen),int(i*blocklen+blocklen)] for i in range(signal_blocks-1)]
+        sample_blocks.append([int((signal_blocks-1)*blocklen),a.shape[-1]])
+        warnings.warn("Sample blocks are uneven")
+    else:
+        blocklen = np.round(blocklen,0)
+        sample_blocks = [[int(i*blocklen),int(i*blocklen+blocklen)] for i in range(signal_blocks)]
+    block_idx = [np.arange(i[0], i[1]) for i in sample_blocks]
+    xa = a[:,block_idx]
+    xa = np.swapaxes(xa,0,1)
+    mean_a = np.mean(xa,axis=-1)
+    xb = b[:,block_idx]
+    xb = np.swapaxes(xb,0,1)
+    mean_b = np.mean(xb,axis=-1)
+    result = stats.mannwhitneyu(mean_a,mean_b,alternative='two-sided',axis=1)
+        
+    return stat_res(result.statistic,result.pvalue),block_idx
+
+def cluster_permutation(a:np.ndarray, b:np.ndarray)->tuple:
+    from mne.stats import permutation_cluster_test
+    data = np.array([a,b])
+    res = permutation_cluster_test(data,tail=0,seed=1,verbose=False,n_permutations=1000)
+    return res
+
+
+
+def spearman_vectorized(array1, array2)->np.ndarray:
+    # secondary sort creates ranks, see: https://math.stackexchange.com/questions/3607762/why-does-sorting-twice-produce-a-rank-vector 
+    ranks1 = np.argsort(np.argsort(array1, axis=1), axis=1)
+    ranks2 = np.argsort(np.argsort(array2, axis=1), axis=1)
+    # Compute Pearson correlation on ranks
+    demeaned1 = ranks1 - ranks1.mean(axis=1, keepdims=True)
+    demeaned2 = ranks2 - ranks2.mean(axis=1, keepdims=True)
+    cov = (demeaned1 * demeaned2).sum(axis=1)
+    std1 = np.sqrt((demeaned1**2).sum(axis=1))
+    std2 = np.sqrt((demeaned2**2).sum(axis=1))
+    result = cov / (std1 * std2)
+    return result
+
+
+
 def pdist2(points:np.ndarray,cloud:np.ndarray,num_mins:int=100)->tuple:
     """
     pdist2 _summary_
