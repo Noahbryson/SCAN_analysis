@@ -3,7 +3,7 @@ from pathlib import Path
 from src.SCAN_SingleSessionAnalysis import *
 import matplotlib.pyplot as plt
 import sys
-from VERA_PyBrain.modules.VERA_PyBrain import PyBrain
+from PyBrain.modules.VERA_PyBrain import PyBrain
 from src.functions.graphics import default_gradient
 
 
@@ -17,11 +17,12 @@ else:
 
 
 subject = 'BJH079_postRF'
+subject = 'SLCH034'
 # subject = 'BJH041'
 gammaRange = [70,170]
 brainType = "MNIbrain_destrieux"
-brainType = "aparc.a2009s"
-brainType = "patient_brain"
+# brainType = "aparc.a2009s"
+# brainType = "patient_brain"
 # brainType = "MNIbrain"
 # session = 'pre_ablation'
 # session = 'post_ablation'
@@ -31,7 +32,7 @@ aggpath = dataPath / 'Aggregate' / f'{subject}_{session}'
 laplacian = False
 bipolar = True
 loadData=True
-save = True
+save = False
 side = 'both'
 
 if bipolar:
@@ -46,7 +47,7 @@ bp = dataPath/subject/'brain'/f'{brainType}.mat'
 # brain._makeBipolarElectrodes()
 # brain = PyBrain(bp,subject=subject,brainName=brainType,bipolar=bipolar,laplacian=laplacian)
 try: #Generation of brain if the file exists, if not data will be parsed as is
-    brain = PyBrain(bp,subject=subject,brainName=brainType,bipolar=bipolar,laplacian=laplacian,loadMapping=False)
+    brain = PyBrain(bp,subject=subject,brainName=brainType,bipolar=bipolar,laplacian=laplacian,loadMapping=True)
     print(f'\nLoaded {brainType} for {subject} from {bp}\n')
     
     electrodemap,regionsLocs = brain._get_ROI_map()
@@ -65,6 +66,7 @@ try: #Generation of brain if the file exists, if not data will be parsed as is
     ROIs = [i for i in brain.regions if i.lower().find('central')>-1]
     ROIs.extend(['G_front_inf-Opercular','G_insular_short'])
     brain.get_ROI_electrodes(ROIs,savename='Motor-Strip')
+
     ROIs = [i for i in brain.regions if i.lower().find('precentral')>-1]
     ROIs.extend(['S_central'])
     brain.get_ROI_electrodes(ROIs,savename='precentral&central')
@@ -76,8 +78,11 @@ except Exception as err:
     brain = None
     print('brain path not valid')
 
-
-a = SCAN_SingleSessionAnalysis(dataPath,subject,session,remove_trajectories=[],
+print(f'Running Analysis on Patient: {subject}\nsession: {session}')
+if subject == 'BJH041':
+    remove = ['OR']
+else: remove=[]
+a = SCAN_SingleSessionAnalysis(dataPath,subject,session,remove_trajectories=remove,
     load=loadData,plot_stimuli=True,gammaRange=gammaRange,refType=reref)
 
 a.plot_session_EMG()
@@ -86,7 +91,7 @@ a.save_movement_latencies()
 a.plot_movement_latencies()
 plt.show(block=False)
 # a.run_ERP_processing(plot=True,save=True,show=False)
-r_sq, p_vals, U_res, d_res,roc_res = a.task_power_analysis(save=save)
+r_sq, p_vals, U_res, d_res,roc_res = a.task_power_analysis(save=save,makePlots=save)
 sig_chans, nonsig_chans, channel_descriptions = a.returnSignificantLocations(p_vals,alpha=0.05)
 effect_of_interest =r_sq
 effect_name = 'r_sq'
@@ -109,8 +114,8 @@ nonspecifics = [i.replace('_','') for i in nonspecifics]
 
 cmap_resolution=1
 
-tuning_colors = default_gradient(cmap_resolution)
-tuning,chan_tuning_colors,angle_key, color_array = a.somatotopic_tuning(r_sq,tuning_colors=tuning_colors,plotCMAP=False,cmapResolution=cmap_resolution)
+tuning_colors,target_colors = default_gradient(cmap_resolution,run_circular=False)
+tuning,chan_tuning_colors,angle_key, color_array = a.somatotopic_tuning(r_sq,tuning_colors=tuning_colors,plotCMAP=True)
 colorLab = list(angle_key.keys())
 labColor = [i['color'] for i in angle_key.values()]
 t_ = [[i,j['color']] for i,j in angle_key.items()]
@@ -118,13 +123,13 @@ t_names = [i[0] for i in t_]
 t_colors = [i[1] for i in t_]
 allChans = tuning['channel'].to_list()
 shared_rep = a.shared_representation(effect_of_interest,sig_chans)
-
+a.run_ERP_processing(show=False,save=True,beta=True)
 
 showFlag = True
 if brainFlag and showFlag:
     allChans_idx = brain._getElectrodeIndexFromLabels(labels=allChans)
     v1=brain.generateAxis(1)
-    v1,_=brain.plotBrainVolume(v1,0.05,[1,1,1],side=side)
+    v1,_=brain.plotBrainVolume(v1,0.05,color=[1,1,1],side=side)
     v1=brain._plotBrainRegions(v1,regions=[i[0] for i in centralSulcusInfo], colors=[i[-1] for i in centralSulcusInfo],opacity=.2,side=side)
     
     nonspecifics_locs = [electrodemap[i] for i in nonspecifics]
@@ -186,3 +191,4 @@ else:
         print(i[0],': ',i[1])
         targets.append(i[0])
     
+plt.show()

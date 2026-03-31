@@ -39,7 +39,7 @@ class format_Stimulus_Presentation_Session():
                     for k in keys:
                         data[k] = temp[k][0]
                     self.data = data
-                    print(0)
+                    print('data loaded from HDF file')
 
                 else:
                     try:    

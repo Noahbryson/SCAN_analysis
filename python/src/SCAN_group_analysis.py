@@ -18,7 +18,7 @@ import math
 import pickle
 import seaborn as sns
 from src.functions.stat_methods import paired_two_sample, nonlinear_fit_permutation_test,pdist2
-from VERA_PyBrain.modules.VERA_PyBrain import PyBrain
+from PyBrain.modules.VERA_PyBrain import PyBrain
 # from sklearn import metrics
 # from sklearn.cluster import KMeans
 from .functions.stat_methods import euclidean_distance

@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../PyBrain"
+		}
+	],
+	"settings": {
+		"docwriter.style": "Auto-detect",
+		"docwriter.progress.trackFunctions": false
+	}
+}

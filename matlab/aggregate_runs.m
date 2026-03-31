@@ -5,7 +5,7 @@
 close all
 clear 
 BCI2KPath = '/Users/nkb/Documents/NCAN/BCI2000tools';
-bci2ktools(BCI2KPath);Subject = 'BJH079_postRF'; % String of Subject NameSubject = 'BJH058'; % String of Subject Name
+bci2ktools(BCI2KPath);Subject = 'SLCH034'; % String of Subject NameSubject = 'BJH058'; % String of Subject Name
 user = expanduser('~'); % Get local path for interoperability on different machines, function in my tools dir. 
 DataPath = sprintf("%s/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/%s",user,Subject); % Path to data
 checkDir(DataPath); % check if data dir exists
@@ -55,13 +55,26 @@ end
 %% Save Block
 chan_types = load(sprintf('%s/%s/preprocessed/channeltypes.mat',DataPath,dataLocs{1}));
 stim_codes = load(sprintf('%s/%s/preprocessed/stimuli.mat',DataPath,dataLocs{1}));
-fp = sprintf('%s/%s.mat',save_dir,Subject);
-save(fp,'agg_signals','-mat','-v7.3');
+chan_types = chan_types.chan_types;
+ref = fieldnames(chan_types);
+chan_names_clean = cellfun(@(s) regexprep(s, '^x_([A-Za-z]+)(\d+)_', '$1L$2_'), ref, 'UniformOutput', false);
+idx = ~strcmp(chan_names_clean,ref);
+oldFields = ref(idx);
+chan_names_replace = chan_names_clean(idx);
+%%
+for i=1:sum(idx)
+    [agg_signals.(chan_names_replace{i})] = agg_signals.(oldFields{i});
+    [chan_types.(chan_names_replace{i})] = chan_types.(oldFields{i});
+end
+agg_signals = rmfield(agg_signals, oldFields);
+chan_types = rmfield(chan_types, oldFields);
+%%
 fp = sprintf('%s/states.mat',save_dir);
 save(fp,'states','-mat','-v7');
 fp = sprintf('%s/channeltypes.mat',save_dir);
-chan_types = chan_types.chan_types;
 save(fp,'chan_types','-mat','-v7');
 fp = sprintf('%s/stimuli.mat',save_dir);
 stim_codes = stim_codes.stim_codes;
 save(fp,'stim_codes','-mat','-v7');
+fp = sprintf('%s/%s.mat',save_dir,Subject);
+save(fp,'agg_signals','-mat','-v7.3');

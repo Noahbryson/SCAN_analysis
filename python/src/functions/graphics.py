@@ -125,7 +125,7 @@ def circle_gradient_key(color_gradient,target_names,target_colors)->Figure:
       return fig
 
 
-def default_gradient(resolution:int):
+def default_gradient(resolution:int,run_circular: bool=False):
       # yellow #FFFF00)
       # Cyan / Aqua	#00FFFF
       # Magenta / Fuchsia	#FF00FF
@@ -145,9 +145,10 @@ def default_gradient(resolution:int):
       cmap = cmc.romaO
       c = np.roll(cmap.colors,0)
       locs = [int(30*len(c)/360),int(150*len(c)/360),int(270*len(c)/360)]
+      if run_circular:
+            c= circular_gradient3(hex2RGB(c1),hex2RGB(c2),hex2RGB(c3),resolution=resolution,shift=30)
       tColors = [c[i,:] for i in locs]
       return c,tColors
-      # return circular_gradient3(hex2RGB(c1),hex2RGB(c2),hex2RGB(c3),resolution=resolution,shift=30)
 
 
 def stockRGB(mode: str='hex')-> tuple:

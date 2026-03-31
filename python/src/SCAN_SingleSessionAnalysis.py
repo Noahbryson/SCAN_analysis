@@ -10,6 +10,7 @@ import math
 import pickle
 import seaborn as sns
 import re
+from typing import Optional, Hashable
 from matplotlib.figure import Figure
 import matplotlib.axes as mpl_axes
 from sklearn import metrics
@@ -121,6 +122,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             .drop(columns='level_0'))
         fig,ax = plt.subplots(1,1)
         ax.spines[['right','top','bottom']].set_visible(False)
+        ax.set_ylim(0,3000)
         sns.boxplot(data=df_long,x='Movement',y='Latency')
         
         
@@ -129,7 +131,11 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
     def remove_trajectory(self,traj_labels:list[str]):
         if len(traj_labels) > 0:
             for traj in traj_labels:
-                self.data['sEEG'].pop(traj)
+                try:
+                    self.data['sEEG'].pop(traj)
+                except KeyError:
+                    print(f'No Traj Named {traj}')
+        
         
     def _processSignals(self,load=True,refType:str='common'):
         commonAvg = self.getCommonAverages()
@@ -154,7 +160,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             writePickle(signalGroups,self.subjectDir / 'preprocessed',fname=fname)
             print('preprocessed the data, saved under {}'.format(fname))
         return signalGroups
-    def remove_references(self):
+    def remove_references(self)-> tuple:
         data = {k:v for k,v in self.data['sEEG'].items() if k.find('REF')<0}
         ref = {k:v for k,v in self.data['sEEG'].items() if k.find('REF')>=0}
         return data, ref
@@ -623,6 +629,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         return epochs
 
     def _locateMuscleOnset(self,emg_stream,testplot=True)-> list:
+        testplot=True
         emg_stream = emg_stream - np.min(emg_stream)
         thresh = 0.5 *np.std(emg_stream) + np.mean(emg_stream)
         # grad = np.gradient(emg_stream,1/self.fs)
@@ -643,7 +650,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         onset = peaks[0]
         while onset > 0 and emg_stream[onset] > peak_thresh:
             onset -= 1
-        start = int(onset2 - 0.5*self.fs) # shift 500ms in time to get window before movement begins
+        start = onset2+1 # start epoching based on movement onset detected by signal derivative > mean(derivative) - stdev(derivative)/2 + 1 (+1 to account for sampling offset)
         if start < 0:
             start = 0
         stop = int((4 * self.fs) + onset) # step to 4s after movement onset
@@ -653,16 +660,14 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             fig = plt.figure()
             ax = plt.subplot(1,1,1)
             # ax.plot(grad, label='grad')
-            ax.plot(emg_stream, label='data')
-            ax.plot(np.abs(np.diff(emg_stream)*np.mean(emg_stream)))
-            
-            ax.plot(xx)
+            ax.plot(emg_stream, label='data')            
+            ax.plot(xx,label='deriv')
             ax.axhline(deriv_thresh)
             # ax.plot(deriv, label='deriv')
             ax.axhline(thresh, label='thresh',c=(0,0,0))
-            ax.axvline(onset, c=(0,1,0))
-            ax.axvline(onset2, c=(1,0.5,0))
-            ax.axvline(start, c=(0,1,1))
+            ax.axvline(onset, c=(0,1,0),label="onset")
+            ax.axvline(onset2, c=(1,0.5,0),label="deriv_onset")
+            ax.axvline(start, c=(0,1,1),label="start-signal")
             ax.axvline(onset-1000, c=(0,0,1),alpha=0.6)
             ax.axvline(onset+4.5*self.fs,c=(0,0,1))
             ax.axvline(onset-1000+4.5*self.fs,c=(0,0,1),alpha=0.6)
@@ -810,18 +815,17 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             out = {k:avg for k in keys}
         return out
     
-    def normalizePSDs(self,data,avgs):
+    def normalizePSDs(self,data,avgs)->pd.DataFrame:
         out = data.copy()
         out['global'] = data.loc[:]['name'].map(avgs)
         out['normalized'] = data.loc[:]['avg'] / out.loc[:]['global']
         return out
-    def sliceDataFrame(self,df,slice,key):
+    def sliceDataFrame(self,df,slice,key)->pd.DataFrame:
         df[key] = df[key].apply(lambda x: sliceArray(x,slice))
         return df
     
     def somatotopic_tuning(self,result: dict,tuning_colors:np.ndarray,plotCMAP=False)-> dict:
         from src.functions.graphics import circle_gradient_key
-        
         cmapResolution = len(tuning_colors)/360
         result = self.reshapeEffect(result)
         output = {}
@@ -845,8 +849,8 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             temp['mag'] = mag
             temp['theta'] = theta
             temp['complex'] = res
-            temp['color'] = tuning_colors[int(theta)]
-            color_out[key] = tuning_colors[int(theta)]
+            temp['color'] = tuning_colors[int(theta*cmapResolution)]
+            color_out[key] = tuning_colors[int(theta*cmapResolution)]
             output[key] = temp
         df = pd.DataFrame(output).T
         df.reset_index(inplace=True)
@@ -854,7 +858,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         
         return df, color_out, angle_key, tuning_colors
     
-    def shared_representation(self,result: dict, sigchans:list):
+    def shared_representation(self,result: dict, sigchans:list)->pd.DataFrame:
         import math
         result = self.reshapeEffect(result)
         res = []
@@ -869,7 +873,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         df.rename({'index':'channel'},axis=1,inplace=True)
         
         return df
-    def task_power_analysis(self, save:bool=False,freqRange:list = [1,300],plotSection:bool=False):
+    def task_power_analysis(self, save:bool=False,freqRange:list = [1,300],makePlots:bool=False)-> tuple:
         # from .functions.filters import moving_average_np
         motor, rest, f = self._sEEG_epochPSDs([freqRange[0],freqRange[1]+1])
         gamma_slice = [np.where(f==self.gammaRange[0])[0][0],np.where(f==self.gammaRange[-1])[0][0]+1]
@@ -886,27 +890,43 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         rest_gamma = self.sliceDataFrame(rest,gamma_slice,key='normalized')
         stdev = self._epoch_PSD_std(motor,rest)
         stdev_gamma = self.sliceDataFrame(stdev,gamma_slice,key='avg_std')
-        if plotSection: #leave false , but did not want to remove entirely as is useful sanity checking step 
+        motor_gamma = motor_gamma.set_index('name')
+        rest_gamma = rest_gamma.set_index('name')
+        if makePlots: #leave false , but did not want to remove entirely as is useful sanity checking step 
             gamma_f = sliceArray(f,gamma_slice)
-            for i in range(150,188):
-                fig, (ax1, ax2,ax3) = plt.subplots(3,1)
-
-                ax1.semilogy(f,motor_gamma.loc[i,'avg'],label="move")
-                ax1.semilogy(f,rest_gamma.loc[i,'avg'] ,label="rest")
-                ax3.plot(gamma_f,motor_gamma.loc[i,'normalized'],label='move')
-                ax3.plot(gamma_f,rest_gamma.loc[i,'normalized'] ,label='rest')
-                ax2.semilogy(f,motor_gamma.loc[i,'avg']*f,label="move")
-                ax2.semilogy(f,rest_gamma.loc[i,'avg']*f ,label="rest")
-                ax1.legend()
-                ax2.legend()
-                ax3.legend()
-                fig.suptitle(f'{motor_gamma.loc[i,"name"]},{motor_gamma.loc[i,"movement"]}')
-                plt.show()
-                
-                """
-                TODO:need to compute r_sq before averaging and compare
-                also need to global normalize single trials not just the averages for the other metrics
-                """
+            for movement in set(motor_gamma['movement']):
+                for traj,chans in self.data['sEEG'].items():
+                    num_chan = len(chans)
+                    num_sqr =int(np.ceil(np.sqrt(num_chan)))
+                    fig, axs = plt.subplots(num_sqr,num_sqr,sharex=True,sharey=True,figsize=(20,15))
+                    ax_counter = axs.ravel()
+                    for idx,i in enumerate(chans):
+                        ax1 = ax_counter[idx]
+                        ax1.set_xlabel('frequency (Hz)')
+                        ax2=ax1.twinx()
+                        m_row = motor_gamma.loc[motor_gamma['movement'] == movement].loc[i]
+                        r_row = rest_gamma.loc[rest_gamma['movement'] == movement].loc[i]
+                        ax1.plot(f,10*np.log(m_row['avg']),label="move",c=(.8,0,.5))
+                        ax1.plot(f,10*np.log(r_row['avg']) ,label="rest",c=(0.6,0.6,0.6))
+                        ax1.set_ylabel('Power Spectrum Density (uV**2/Hz)')
+                        ax2.plot(gamma_f,m_row['normalized'],label="_",c=(.8,0,.5))
+                        ax2.plot(gamma_f,r_row['normalized'],label="_",c=(0.6,0.6,0.6))
+                        ax2.set_ylim([-1,10])
+                        ax2.set_ylabel('normalized power (a.u.)')
+                        ax1.legend()
+                        ax2.legend()
+                        ax1.set_title(i)
+                    fig.suptitle(f'{traj}, {movement} power spectra')
+                    for a in axs.flat:
+                        a.label_outer()
+                    dirOut = self.saveRoot/'figures'/'power'
+                    os.makedirs(dirOut,exist_ok=True)
+                    fname = f'{traj}_{movement}_power_spectrum.png'
+                    if save:
+                        fig.savefig(dirOut/fname,transparent=True,)
+                        plt.close() 
+        motor_gamma = motor_gamma.reset_index()
+        rest_gamma = rest_gamma.reset_index()
         r_sq = self.compute_cross_correlations(motor_gamma,rest_gamma,stdev_gamma)
         p, U_res, d_res,roc_res = self.compute_power_distribution_significance(fullMotor,fullRest,gamma_slice)
         # r_sq_all = self.compute_cross_correlations_by_trial(motor_gamma,rest_gamma,g_av)
