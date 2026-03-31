@@ -1,4 +1,6 @@
 {
       "docwriter.style": "Auto-detect",
-      "docwriter.progress.trackFunctions": false
+      "docwriter.progress.trackFunctions": false,
+      "python-envs.defaultEnvManager": "ms-python.python:conda",
+      "python-envs.defaultPackageManager": "ms-python.python:conda"
 }
