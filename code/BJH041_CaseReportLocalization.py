@@ -33,13 +33,9 @@ else:
       reref = 'common'
 
 bp = dataPath/subject/'brain'/f'{brainType}.mat'
-try:
-      brain = PyBrain(bp,subject=subject,brainName=brainType,loadMapping=True)
-      print(f'\nLoaded {brainType} for {subject} from {bp}\n')
+brain = PyBrain(fp=bp,subject=subject,brainName=brainType,loadMapping=True)
+print(f'\nLoaded {brainType} for {subject} from {bp}\n')
       
-except:
-      brain = None
-      print('brain path not valid')
 
 electrodemap,regionsLocs = brain._get_ROI_map()
 colored_regions = ['s_precentral-sup-part','s_central','g_precentral']
@@ -112,13 +108,13 @@ if figSZ:
       sz_colors[12:14,:] = np.array([105,201,202])/255
       sz_colors[15:18,:] = np.array([75,96,247])/255
       SZ_colors = {i:j for i,j in zip(SZ_channels,sz_colors)}
-      sz_vol=brain.generateAxis(1)
+      sz_vol=brain.generateAxis(off_screen=True)
       sz_vol,coords=brain.plotBrainVolume(sz_vol,0.05,[1,1,1],side=side)
       SZ_path = boxPath/r'Brunner Lab/Writing/manuscripts/SCAN ABLATION 2025/figures/FIG1'
       targetIdx = brain._getElectrodeIndexFromLabels(labels=SZ_channels)
       sz_vol=brain.generateAxis()
-      sz_vol=brain._plotBrainRegions(sz_vol,regions=[i[0] for i in centralSulcusInfo], colors=[i[-1] for i in centralSulcusInfo],opacity=1,side=side)
-      sz_vol=brain._plotBrainRegions(sz_vol,regions=[i[0] for i in plottingRegions], 
+      sz_vol=brain._plotBrainRegions(ax=sz_vol,regions=[i[0] for i in centralSulcusInfo], colors=[i[-1] for i in centralSulcusInfo],opacity=1,side=side)
+      sz_vol=brain._plotBrainRegions(ax=sz_vol,regions=[i[0] for i in plottingRegions], 
             colors=[i[-1] for i in plottingRegions],opacity=.7,side=side)
       sz_vol.show_axes()
       

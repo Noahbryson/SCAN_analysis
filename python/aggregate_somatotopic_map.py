@@ -1,1 +1,0 @@
-from PyBrain.modules.projectAtlas import projectAtlas

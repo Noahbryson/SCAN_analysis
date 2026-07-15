@@ -1,3 +1,4 @@
+import json
 import os
 import csv
 from pathlib import Path
@@ -10,7 +11,7 @@ import math
 import pickle
 import seaborn as sns
 import re
-from typing import Optional, Hashable
+from typing import Optional, Hashable, Dict
 from matplotlib.figure import Figure
 import matplotlib.axes as mpl_axes
 from sklearn import metrics
@@ -52,8 +53,10 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             with open(self.main_dir/self.subject/'muscle_mapping.csv', 'r') as fp:
                 reader = csv.reader(fp)
                 self.muscleMapping: dict = {rows[0]:rows[1:] for rows in reader}
+                print(f'loaded muscle mapping from file: {self.muscleMapping}')
         else:
             self.muscleMapping = {'1_Hand':['wristExtensor', 'ulnar'], '3_Foot':['TBA'],'2_Tongue':['tongue']}
+            print(f'using default muscle mapping: {self.muscleMapping}')
         self.subjectDir = path / subject / sessionID
         dataLoc = self.subjectDir / 'preprocessed'
         self.saveRoot = self.subjectDir / 'analyzed'
@@ -99,8 +102,8 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         return fig
     
     
-    def save_movement_latencies(self,savepath='')->None:
-        if len(savepath) == 0:
+    def save_movement_latencies(self,savepath=Path|None)->None:
+        if savepath is None:
             savepath = self.aggregate_results_dir
         else:
             savepath = Path(savepath)
@@ -291,10 +294,11 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         return output
     def process_sEEG(self,sEEG:dict,rerefType: str,commonAvg)-> dict:
         
-        trajectories = [key[0:2] for key in sEEG.keys()]
+        trajectories = [key[0:2].replace('_','') for key in sEEG.keys()]
         trajectories = set(trajectories)
-        trajectories.remove('RE')
-        trajectories.add('REF')
+        if 'RE' in trajectories:
+            trajectories.remove('RE')
+            trajectories.add('REF')
         
         output = {}
         for traj in trajectories:
@@ -941,6 +945,20 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
             df.to_csv(saveDir/f'{self.subject}_{self.sessionID}_rsq.csv')
         return r_sq, p, U_res, d_res,roc_res
     
+    def export_task_power(self,label:str,metric: dict,p: dict,savepath:Path,thresh=0.1)->None:
+        _, response_class, _ = self.parse_results_for_triple_responders(metric,thresh=thresh)
+        label = label.replace('_','-')
+        df = pd.DataFrame.from_dict(metric)
+        df.rename({i:f'{i}_{label}' for i in df.columns},axis=1,inplace=True)
+        df_p = pd.DataFrame.from_dict(p)
+        df_p.rename({i:f'{i}_p' for i in df_p.columns},axis=1,inplace=True)
+        df = df.join(df_p)
+        df['class'] = response_class
+        json_out = df.to_json()
+        with open(savepath/f'{label}_{self.subject}_metrics.json','w') as fp:
+            json.dump(json_out,fp)
+        
+        
     def __normalize_single_trial_PSDs(self,data_df:pd.DataFrame,global_average: dict):
         cols = np.linspace(1,10,10,dtype=int).tolist()
         renameCols = [f'norm_{i}' for i in cols]

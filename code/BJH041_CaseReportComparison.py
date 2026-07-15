@@ -6,8 +6,8 @@ from matplotlib import pyplot as plt
 import distinctipy
 import random
 import platform
-from VERA_PyBrain.modules.VERA_PyBrain import PyBrain
-from VERA_PyBrain.modules.MRI_Utils import load_fsLabel, combine_volumes
+from PyBrain.modules.VERA_PyBrain import PyBrain
+from PyBrain.modules.MRI_Utils import load_fsLabel, combine_volumes
 lesion_volumes = [Path('/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/patients/BJH041/MRI/post_RF/RF_Volume_v2.label'),Path('/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/patients/BJH041/MRI/post_RF/RF_Edema_v2.label')]
 
 lesion_volumes = [load_fsLabel(i) for i in lesion_volumes]
@@ -59,13 +59,13 @@ indices = [[1, 2, 0],[1, 0, 2]]
 # ax.close()
 
 
-a = SCAN_group_analysis(dataPath/'Aggregate',subjectSessions)
-from src.SCAN_group_analysis import plot_latencies
+a = SCAN_group_analysis(dataPath/'Aggregate',subject_list=subjectSessions)
+
 method = 'cluster'
+fig = a.analyze_latencies_pre_post()
+plt.show()
 ERP_compare = a.compare_ERP_pair(subjectSessions[0],subjectSessions[1],method=method,savePath=f'/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/Aggregate/pairs/BJH041_pre-v-post/{method}')
 
-breakpoint()
-fig = plot_latencies(a.load_latencies())
 suppPath = r'/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/Writing/manuscripts/SCAN ABLATION 2025/figures/zSUPP/reaction_time'
 os.makedirs(suppPath,exist_ok=True)
 fig.savefig(f'{suppPath}/latencies.svg')

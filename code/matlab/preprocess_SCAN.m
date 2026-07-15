@@ -2,14 +2,14 @@
 close all
 BCI2KPath = '/Users/nkb/Documents/NCAN/BCI2000tools';
 addpath(genpath('/Users/nkb/Documents/NCAN/code/SCAN_analysis/matlab'))
-bci2ktools(BCI2KPath);Subject = 'SLCH034'; % String of Subject Name
-user = expanduser('~'); % Get local path for interoperability on different machines, function in my tools dir. 
+bci2ktools(BCI2KPath);Subject = 'SLCH020'; % String of Subject Name
+user = expanduser('~'); % Get local path for interoperability on different machines, function in my tools dir.
 DataPath = sprintf("%s/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/%s",user,Subject); % Path to data
 
 checkDir(DataPath); % check if data dir exists
 % Load Data and Metadata
 channels = loadElectrodeChannels(DataPath); % channel discription in parent subject directory, encodes they type and name of each channel
-    
+
 dirContents = dir(DataPath);
 tgtFile = 'run'; % str for folder to parse in parent subject directory
 dataLocs = parseDir(dirContents,tgtFile,'beans');
@@ -20,40 +20,40 @@ pathName = dataLocs{1}; % select file wanted if multiple runs of this experiment
 
 for i = 1:length(dataLocs)
 
-pathName = dataLocs{i};
-tDir = sprintf('%s/%s',DataPath,pathName); % path to specific session
-files = dir(tDir); % file list
-fname = parseDir(files,'dat','_');
-fname = fname{end}; % extract fname from cell array
-[data,states,parms]=load_bcidat(strcat(tDir,'/',fname),1); % load BCI2000 dat file
-secondaryBCIflag = ismember('gUSB',channels.Var6);
+    pathName = dataLocs{i};
+    tDir = sprintf('%s/%s',DataPath,pathName); % path to specific session
+    files = dir(tDir); % file list
+    fname = parseDir(files,'dat','_');
+    fname = fname{end}; % extract fname from cell array
+    [data,states,parms]=load_bcidat(strcat(tDir,'/',fname),1); % load BCI2000 dat file
+    secondaryBCIflag = ismember('gUSB',channels.Var6);
 
-if secondaryBCIflag % if there are secondary EMG recordings!!!!!
-fname_sub = strsplit(fname,'.');
-tgt = fname_sub(1);
-tgt = strcat(tgt,'_1.dat');
-[data2,states2,parms2] = load_bcidat(strcat(tDir,'/',tgt{1}),1);
-[data2,states2] = resampleSecondaryData(data2,states2,parms2.SamplingRate.NumericValue,parms.SamplingRate.NumericValue,0);
-[DATA1,DATA2,STATES1,STATES2] = alignSecondaryData(data, data2,states,states2);
-[data,states] = aggregateData(DATA1,DATA2,STATES1,STATES2);
-end
-[keys,type] = labelDataChannels(data,channels); % generate labels from data and channel description
-saveDir = strcat(tDir,'/preprocessed'); % path to save dir for preprocessed files
-if ~exist(saveDir,'dir')
-    mkdir(saveDir);
-end
+    if secondaryBCIflag % if there are secondary EMG recordings!!!!!
+        fname_sub = strsplit(fname,'.');
+        tgt = fname_sub(1);
+        tgt = strcat(tgt,'_1.dat');
+        [data2,states2,parms2] = load_bcidat(strcat(tDir,'/',tgt{1}),1);
+        [data2,states2] = resampleSecondaryData(data2,states2,parms2.SamplingRate.NumericValue,parms.SamplingRate.NumericValue,0);
+        [DATA1,DATA2,STATES1,STATES2] = alignSecondaryData(data, data2,states,states2);
+        [data,states] = aggregateData(DATA1,DATA2,STATES1,STATES2);
+    end
+    [keys,type] = labelDataChannels(data,channels); % generate labels from data and channel description
+    saveDir = strcat(tDir,'/preprocessed'); % path to save dir for preprocessed files
+    if ~exist(saveDir,'dir')
+        mkdir(saveDir);
+    end
 
-test = writeChannelDescriptions(saveDir,keys,type,1); % write channel decriptions as a structure to .mat (v7.0) files
-states = writeStates2MAT(saveDir,states); % write states as a structure to .mat (v7.0) files
-writeStimuliCodes(parms,saveDir) % write stimuli code parm as a structure to .mat (v7.0) files -> will eventually reshape and encode other metadata like sampling rate
-writeMATwithHeader(saveDir,Subject,data,keys,1); % write labeled data as a structure to .mat (v7.0) files
+    test = writeChannelDescriptions(saveDir,keys,type,1); % write channel decriptions as a structure to .mat (v7.0) files
+    states = writeStates2MAT(saveDir,states); % write states as a structure to .mat (v7.0) files
+    writeStimuliCodes(parms,saveDir) % write stimuli code parm as a structure to .mat (v7.0) files -> will eventually reshape and encode other metadata like sampling rate
+    writeMATwithHeader(saveDir,Subject,data,keys,1); % write labeled data as a structure to .mat (v7.0) files
 end
 
 
 function channels = loadElectrodeChannels(dir)
-    fname = sprintf("%s/channels.csv",dir);
-    % otps = detectImportOptions(fname);
-    channels = readtable(fname);
+fname = sprintf("%s/channels.csv",dir);
+% otps = detectImportOptions(fname);
+channels = readtable(fname);
 end
 
 
@@ -72,19 +72,19 @@ for i=1:length(fields)
     Y.(fields{i}) = temp;
 end
 if plot
-figure
-t1 = linspace(0,1,size(data,1));
-t2 = linspace(0,1,num_samp);
-subplot(2,2,1)
-plot(t1,data(:,1))
-subplot(2,2,2)
-plot(t2,X(:,1));
-subplot(2,2,3)
-[Pxx,f] = pwelch(data(:,1),[],[],[],fs);
-semilogy(f,Pxx)
-subplot(2,2,4)
-[Pxx,f] = pwelch(X(:,1),[],[],[],target_fs);
-semilogy(f,Pxx)
+    figure
+    t1 = linspace(0,1,size(data,1));
+    t2 = linspace(0,1,num_samp);
+    subplot(2,2,1)
+    plot(t1,data(:,1))
+    subplot(2,2,2)
+    plot(t2,X(:,1));
+    subplot(2,2,3)
+    [Pxx,f] = pwelch(data(:,1),[],[],[],fs);
+    semilogy(f,Pxx)
+    subplot(2,2,4)
+    [Pxx,f] = pwelch(X(:,1),[],[],[],target_fs);
+    semilogy(f,Pxx)
 end
 end
 
@@ -105,29 +105,29 @@ thresh2 = 3*std(sync2);
 
 x1 = detectThresholdCrossing(sync1, thresh1, 3500);
 x2 = detectThresholdCrossing(sync2, thresh2, 3500);
-avg_offset = cast(mean(x1-x2),'int32'); 
+avg_offset = cast(mean(x1-x2),'int32');
 %avg_offset > 0 primary lags secondary, avg_offset < 0 primary leads secondary
 
 % if datastreams are different lengths, adjust them to the length of
 % the longer one. if the smaller stream lags the larger, truncate larger stream. if the
-% smaller stream leads the larger stream, shift the larger stream. 
+% smaller stream leads the larger stream, shift the larger stream.
 stream_diff = size(data1,1) - size(data2,1); %positive: prim > sec, negative prim < sec
 if stream_diff > 0 && avg_offset > 0
-% prim bigger and lagging
-data1 = data1(stream_diff+1:end,:);
+    % prim bigger and lagging
+    data1 = data1(stream_diff+1:end,:);
 elseif stream_diff < 0 && avg_offset > 0
-% prim smaller and lagging
-data2 = data2(1:end-(abs(stream_diff)),:);
+    % prim smaller and lagging
+    data2 = data2(1:end-(abs(stream_diff)),:);
 elseif stream_diff > 0 && avg_offset < 0
-% prim bigger and leading
-data1 = data1(1:end-(stream_diff-1),:);
-elseif stream_diff < 0 && avg_offset < 0    
-% prim smaller and leading
-data2 = data2(stream_diff+1:end,:);
+    % prim bigger and leading
+    data1 = data1(1:end-(stream_diff-1),:);
+elseif stream_diff < 0 && avg_offset < 0
+    % prim smaller and leading
+    data2 = data2(stream_diff+1:end,:);
 end
 
 if avg_offset >= 0 % primary data lagging secondary data
-    
+
     DATA1 = zeros(size(data1,1)-avg_offset+1,size(data1,2));
     STATES1 = struct;
     for i=1:size(data1,2)
@@ -149,7 +149,7 @@ if avg_offset >= 0 % primary data lagging secondary data
         STATES2.(fields{i}) = temp;
     end
 else % primary data leading secondary data
-    
+
     DATA2 = zeros(size(data2,1)-avg_offset+1,size(data2,2));
     STATES2 = struct;
     for i=1:size(data2,2)
@@ -180,7 +180,7 @@ sync1 = double(STATES1.DC04);
 sync1 = abs(sync1-mean(sync1))/max((sync1));
 sync2 = double(STATES2.DigitalInput4);
 sync2 = abs(sync2-mean(sync2))/max((sync2));
-figure(2)
+figure
 hold on
 plot(sync1)
 yline(thresh1)
@@ -203,7 +203,7 @@ end
 
 
 function X = shiftTimeseries(data, shift)
- X = data(shift:end);
+X = data(shift:end);
 end
 function X = truncateTimeseries(data,shift)
 X = data(1:end-shift+1);
@@ -231,7 +231,7 @@ for i=1:N_chan
     end
     k = table2array(ChanLab);
     k = k{1};
-    k = sprintf('%s_%d',k,i);   
+    k = sprintf('%s_%d',k,i);
     keys{i} = k;
     type{i} = t;
 end

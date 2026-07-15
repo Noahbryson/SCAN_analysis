@@ -17,21 +17,53 @@ import distinctipy
 import math
 import pickle
 import seaborn as sns
+import json
 from src.functions.stat_methods import paired_two_sample, nonlinear_fit_permutation_test,pdist2
 from PyBrain.modules.VERA_PyBrain import PyBrain
 # from sklearn import metrics
 # from sklearn.cluster import KMeans
+from typing import Optional
 from .functions.stat_methods import euclidean_distance
 from .modules.response_datastructs import ERP_struct, plot_range_on_curve
 
 class SCAN_group_analysis():
-      def __init__(self, dataDir:Path, subjectList: list):
-            self.path = dataDir
-            self.subjects = subjectList
-            self.subjectDirs = {sub:dataDir/sub for sub in subjectList}
+      def __init__(self, dataDir:Path, subjectListPath: Optional[Path]=None, subject_list: Optional[list]=None):
+            self.root_dir = dataDir
+            if subjectListPath is not None:
+                  with open(subjectListPath,'r') as fp:
+                        subjects_dict = json.load(fp)
+                  self.subjects = subjects_dict['subjects']
+                  self.sessions = subjects_dict['sessions']
+            elif subject_list is not None:
+                  temp = [[i.split('_')[0],'_'.join(i.split('_')[1:])]for i in subject_list]
+                  self.subjects,self.sessions = zip(np.transpose(temp))
+                  self.sessions = list(self.sessions[0])
+                  self.subjects = list(self.subjects[0])
+                  del temp
+            else:
+                  raise SyntaxError("No subjectListPath or subjectList were passed")
+            self.subjectDirs = {'_'.join([sub,sesh]):dataDir/'_'.join([sub,sesh]) for sub,sesh in zip(self.subjects,self.sessions)}
             self.colorPalletBest = [(62/255,108/255,179/255), (27/255,196/255,225/255), (129/255,199/255,238/255),(44/255,184/255,149/255),(0,129/255,145/255), (193/255,189/255,47/255),(200/255,200/255,200/255)]
             self.movements = ['Hand','Foot','Tongue']
             
+      def load_task_power(self,metric_name:str='r-sq')->pd.DataFrame:
+            df = pd.DataFrame()
+            gener = zip(self.subjects,self.sessions)
+            for sub,sesh in gener:
+                  fid = self.root_dir / 'Aggregate'/'task_power'/f'{sub}_{sesh}'/f'{metric_name}_{sub}_metrics.json'
+                  try:
+                        with open(fid,'r') as fp:
+                              temp = pd.DataFrame.from_dict(json.loads(json.load(fp)))
+                        temp['subject'] = sub
+                        temp['session'] = sesh
+                        temp = temp.reset_index().rename({'index':'channel'},axis=1)
+                        temp['channel'] = temp['channel'].str.upper().str.replace('-B-','-b-')
+                        temp = temp.set_index(['subject','channel'])
+                        df = pd.concat([df,temp])
+                  except FileNotFoundError:
+                        print(f'{sub}: {sesh} not processed, skipping')
+            return df
+      
 
       def Load_all_ERPs(self,ERP_type:str='gamma')->None:
             self.ERPs = {}
@@ -135,10 +167,11 @@ class SCAN_group_analysis():
                   output = pd.concat([output,df])
                   
             output.reset_index(inplace=True)
+            mask = output['Latency'] < 200 #ms
+            output.loc[mask,'Latency'] = np.nan
             return output.drop('index',axis=1)
             
             
-             
       def load_channnel_labels(self,reference_session)-> tuple:
             p = self.subjectDirs[reference_session]
             labels = pd.read_csv(p/'channel_classifications.csv')
@@ -463,24 +496,41 @@ class SCAN_group_analysis():
             return data[data['session']==target_session]
       
       
-def plot_latencies(data:pd.DataFrame)->Figure:
-      import random
-      fig, ax = plt.subplots(1,1)
-      labels = np.unique(data['session'].to_list())
-      n = len(labels)
-      ax.spines[['right','top','bottom']].set_visible(False)
-      cs = distinctipy.get_colors(3,pastel_factor=0.5,rng=random.seed(35))
-      cs = [(0.97602050272426, 0.33490232967809724, 0.3437729866283861),(0.3630238841279352, 0.3377308638235165, 0.957096838172224)]
-      
-      pallete = {i:j for i,j in zip(labels,cs)}
-      sns.boxplot(data,x='Movement',y='Latency',hue='session',ax=ax,palette=pallete)
-      sns.swarmplot(data,x='Movement',y='Latency',hue='session',ax=ax,palette=pallete)
-      ax.tick_params(direction='in')
-      ax.set_ylim([0,2000])
-      
-      
-      return fig
+      def analyze_latencies_pre_post(self)->Figure:
+            import random
+            data = self.load_latencies()
+            fig, ax = plt.subplots(1,1)
+            labels = np.unique(data['session'].to_list())
+            n = len(labels)
+            ax.spines[['right','top','bottom']].set_visible(False)
+            cs = distinctipy.get_colors(3,pastel_factor=0.5,rng=random.seed(35))
+            cs = [(0.97602050272426, 0.33490232967809724, 0.3437729866283861),(0.3630238841279352, 0.3377308638235165, 0.957096838172224)]
+            x_vals = list(set(data['Movement']))
+            pallete = {i:j for i,j in zip(labels,cs)}
+            sns.boxplot(data,x='Movement',y='Latency',hue='session',ax=ax,palette=pallete)
+            sns.swarmplot(data,x='Movement',y='Latency',hue='session',ax=ax,palette=pallete)
+            ax.tick_params(direction='in')
+            ax.set_ylim([0,2000])
+            results = {}
+            for i in x_vals:
+                  df = data.query("Movement==@i")
+                  pre = df['session']
+                  df_dict = {value: group['Latency'].to_numpy() for value, group in df.groupby('session')}
+                  if len(df_dict)==2:
+                        print("running post RF comparison")
+                        keys = sorted(list(df_dict.keys()))
+                        a = df_dict[keys[1]]
+                        b = df_dict[keys[0]]
+                        res = stats.ranksums(a,b,nan_policy='omit')
+                        results[i] = res
+            for i,j in results.items():
+                  res_str = f'stat={np.round(j.statistic,4)}\np={np.round(j.pvalue*len(results),6)}'
+                  ax.text(i,200,res_str)
+
             
+            
+            return fig
+                  
 
 def ablation_effect(brain:PyBrain, effect:pd.DataFrame, effect_name:str,
       volume:np.ndarray, volumeLabel:str, ROIs: list,centroid: bool=True,plot: bool=True,ax: Axes|None=None)-> tuple:
@@ -671,3 +721,4 @@ def tuning(hand,foot,tongue)-> tuple:
       mag = float(abs(res))
       theta = complex_angle(res)
       return res,mag,theta
+      
