@@ -102,7 +102,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         return fig
     
     
-    def save_movement_latencies(self,savepath=Path|None)->None:
+    def save_movement_latencies(self,savepath:Path|None=None)->None:
         if savepath is None:
             savepath = self.aggregate_results_dir
         else:

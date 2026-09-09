@@ -67,6 +67,12 @@ def CLI_args() -> argparse.Namespace:
             default=6,
             help="electrode neighborhood radius in mm",
       )
+      parser.add_argument(
+            "--ignore-legacy-spins",
+            action="store_true",
+            default=False,
+            help="ignore legacy value-based spin caches and use only index-based caches or regeneration",
+      )
       return parser.parse_args()
 
 
@@ -133,7 +139,7 @@ if args.motor_rois:
       print('restricting motor ROIs')
       ROIs = list(np.unique([i for i in flatbrain.electrode_library['region'] if i.lower().find('central')>-1]))
       
-      insula_ROIs = list(np.unique(i for i in flatbrain.electrode_library['region'] if i.lower().find('insula')>-1))
+      insula_ROIs = list(np.unique(i for i in flatbrain.electrode_library['region'] if i.lower().find('insula')>-1 or i.lower().find('ins_ig')>-1))
       insula_ROIs.append('G_insular_short')
       if args.insula:
             print('including insula')
@@ -173,7 +179,12 @@ key_subset.pop(key_subset.index('na'))
 emap = flatbrain.return_ROI_mapping(ephys_map)
 imap = flatbrain.return_ROI_mapping(SCAN_KEY)
 
-spin_model = SpinNullModel(flatbrain.atlas,emap,imap)
+spin_model = SpinNullModel(
+      flatbrain.atlas,
+      emap,
+      imap,
+      ignore_legacy_spins=args.ignore_legacy_spins,
+)
 
 # spin_model.map_labels = key_subset
 spin_model.map_labels = {i:key_subset for i in spin_model.hemis}
@@ -273,4 +284,3 @@ plt.close('all')
 # surf = flatbrain.generic_surface_plot('lh')
 
 plot_class = 'inter'
-

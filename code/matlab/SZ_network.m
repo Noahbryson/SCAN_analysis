@@ -62,10 +62,10 @@ end
 end
 yshift = 400;
 sigs = getHighPassData(data,2,2,fs);
-figure(9)
+figure
 hold on
 ticks = [];
-slice = [100:180];
+slice = 100:180;
 for i=1:length(chans(slice))
     plot(sigs(:,slice(i))+(i-1)*yshift);
     ticks = [ticks yshift*(i-1)];
@@ -80,8 +80,12 @@ clear signals data
 
 data = [res.sig];
 data = getHighPassData(data,2,2,fs);
+%% Detect LVFA Onsets
+
+
 
 %% SZ Network Timeseries one ax
+rm_chs = {'JL9-b-10','JL10-b-11','JL12-b-13','ML13-b-14','ML12-b-13'};
 downsamp_factor = 20;
 shift_amount = 1250;
 
@@ -91,14 +95,16 @@ fs = param.SamplingRate.NumericValue/downsamp_factor;
 stim = stim(1:downsamp_factor:end);
 dat = data(1:downsamp_factor:end,:);
 
-fig = figure(1);
-[~, exclude] = ismember({'JL9-b-10','JL10-b-11'},chans);
+fig = figure;
+[~, exclude] = ismember(rm_chs,chans);
 if sum(exclude) > 0
-indexer = ones(size(chans));
-indexer(exclude) = 0;
-indexer = indexer > 0;
-chans = chans(indexer);
-dat = dat(:,indexer);
+    indexer = ones(size(chans));
+    temp_loc = exclude == 0;
+    exclude(temp_loc) = [];
+    indexer(exclude) = 0;
+    indexer = indexer > 0;
+    chans = chans(indexer);
+    dat = dat(:,indexer);
 end
 % [~, exclude] = ismember({'JL9-b-10','JL10-b-11'},channel_ROIs);
 % indexer = ones(size(channel_ROIs));

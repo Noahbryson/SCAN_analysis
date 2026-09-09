@@ -286,7 +286,8 @@ def binned_timeseries_compare(a:np.ndarray, b:np.ndarray, signal_blocks:int=30)-
 def cluster_permutation(a:np.ndarray, b:np.ndarray)->tuple:
     from mne.stats import permutation_cluster_test
     data = np.array([a,b])
-    res = permutation_cluster_test(data,tail=0,seed=1,verbose=False,n_permutations=1000)
+    # res = permutation_cluster_test(data,tail=0,seed=1,verbose=False,n_permutations=1000)
+    res = permutation_cluster_test(data,seed=1,verbose=False,n_permutations=1000)
     return res
 
 

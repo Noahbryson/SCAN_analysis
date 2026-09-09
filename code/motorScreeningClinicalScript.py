@@ -17,12 +17,12 @@ else:
 
 
 subject = 'BJH079_postRF'
-subject = 'SLCH034'
+# subject = 'SLCH034'
 # subject = 'BJH041'
 gammaRange = [70,170]
 brainType = "MNIbrain_destrieux"
 # brainType = "aparc.a2009s"
-# brainType = "patient_brain"
+brainType = "patient_brain"
 # brainType = "MNIbrain"
 # session = 'pre_ablation'
 # session = 'post_ablation'
@@ -33,6 +33,7 @@ laplacian = False
 bipolar = True
 loadData=True
 save = False
+ERP_flag = False
 side = 'both'
 
 if bipolar:
@@ -90,7 +91,8 @@ a.plot_session_EMG()
 a.save_movement_latencies()
 a.plot_movement_latencies()
 plt.show(block=False)
-# a.run_ERP_processing(plot=True,save=True,show=False)
+if ERP_flag:
+    a.run_ERP_processing(plot=True,save=True,show=False)
 r_sq, p_vals, U_res, d_res,roc_res = a.task_power_analysis(save=save,makePlots=save)
 sig_chans, nonsig_chans, channel_descriptions = a.returnSignificantLocations(p_vals,alpha=0.05)
 effect_of_interest =r_sq

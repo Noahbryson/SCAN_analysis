@@ -496,21 +496,24 @@ class SCAN_group_analysis():
             return data[data['session']==target_session]
       
       
-      def analyze_latencies_pre_post(self)->Figure:
+      def analyze_latencies_pre_post(self,ylims=[0,2000],drop_movements=[])->Figure:
             import random
             data = self.load_latencies()
             fig, ax = plt.subplots(1,1)
             labels = np.unique(data['session'].to_list())
             n = len(labels)
             ax.spines[['right','top','bottom']].set_visible(False)
-            cs = distinctipy.get_colors(3,pastel_factor=0.5,rng=random.seed(35))
+            if len(drop_movements)> 0:
+                  x_vals = list(set(data['Movement']))
+                  for i in drop_movements:
+                        x_vals.pop(x_vals.index(i))
+            data = data[data['Movement'].isin(x_vals)]
             cs = [(0.97602050272426, 0.33490232967809724, 0.3437729866283861),(0.3630238841279352, 0.3377308638235165, 0.957096838172224)]
-            x_vals = list(set(data['Movement']))
             pallete = {i:j for i,j in zip(labels,cs)}
             sns.boxplot(data,x='Movement',y='Latency',hue='session',ax=ax,palette=pallete)
             sns.swarmplot(data,x='Movement',y='Latency',hue='session',ax=ax,palette=pallete)
             ax.tick_params(direction='in')
-            ax.set_ylim([0,2000])
+            ax.set_ylim(ylims)
             results = {}
             for i in x_vals:
                   df = data.query("Movement==@i")
