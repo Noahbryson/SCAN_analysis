@@ -5,7 +5,7 @@
 close all
 clear 
 BCI2KPath = '/Users/nkb/Documents/NCAN/BCI2000tools';
-bci2ktools(BCI2KPath);Subject = 'SLCH020'; % String of Subject NameSubject = 'BJH058'; % String of Subject Name
+bci2ktools(BCI2KPath);Subject = 'SLCH034-postRF'; % String of Subject NameSubject = 'BJH058'; % String of Subject Name
 user = expanduser('~'); % Get local path for interoperability on different machines, function in my tools dir. 
 DataPath = sprintf("%s/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/%s",user,Subject); % Path to data
 checkDir(DataPath); % check if data dir exists
@@ -26,7 +26,8 @@ runs = struct;
 % time series must be aggregated. 
 agg_signals = struct;
 states = struct;
-for i=1:length(dataLocs) 
+for i=1:length(dataLocs)
+    try
     fp = sprintf('%s/%s/preprocessed',DataPath,dataLocs{i});
     temp = load(sprintf('%s/%s.mat',fp,Subject));
     f = fieldnames(temp.signals);
@@ -49,6 +50,9 @@ for i=1:length(dataLocs)
         states.(name) = [states.(name); temp.states.(name)];
         end
 
+    end
+    catch ME
+        disp(ME.message)
     end
 end
 

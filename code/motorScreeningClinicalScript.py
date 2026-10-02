@@ -17,6 +17,7 @@ else:
 
 
 subject = 'BJH079_postRF'
+subject = 'SLCH034-postRF'
 # subject = 'SLCH034'
 # subject = 'BJH041'
 gammaRange = [70,170]
@@ -32,7 +33,7 @@ aggpath = dataPath / 'Aggregate' / f'{subject}_{session}'
 laplacian = False
 bipolar = True
 loadData=True
-save = False
+save = True
 ERP_flag = False
 side = 'both'
 
@@ -91,8 +92,7 @@ a.plot_session_EMG()
 a.save_movement_latencies()
 a.plot_movement_latencies()
 plt.show(block=False)
-if ERP_flag:
-    a.run_ERP_processing(plot=True,save=True,show=False)
+
 r_sq, p_vals, U_res, d_res,roc_res = a.task_power_analysis(save=save,makePlots=save)
 sig_chans, nonsig_chans, channel_descriptions = a.returnSignificantLocations(p_vals,alpha=0.05)
 effect_of_interest =r_sq
@@ -108,6 +108,12 @@ if brainFlag:
             channel_classifcation_out.append(f'{i},{channel_classifcation[i]},1,{electrodemap[i]}\n')
         else: 
             channel_classifcation_out.append(f'{i},{channel_classifcation[i]},0,{electrodemap[i]}\n')
+else:    
+    for i in channel_classifcation:
+        if i in sig_chans:
+            channel_classifcation_out.append(f'{i},{channel_classifcation[i]},1\n')
+        else: 
+            channel_classifcation_out.append(f'{i},{channel_classifcation[i]},0\n')
 with open(aggpath/'channel_classifications.csv','w') as fp:
     fp.write('channel,class,significant,region\n')
     fp.writelines(channel_classifcation_out)
@@ -125,7 +131,7 @@ t_names = [i[0] for i in t_]
 t_colors = [i[1] for i in t_]
 allChans = tuning['channel'].to_list()
 shared_rep = a.shared_representation(effect_of_interest,sig_chans)
-a.run_ERP_processing(show=False,save=True,beta=True)
+if ERP_flag: a.run_ERP_processing(show=False,save=True,beta=True)
 
 showFlag = True
 if brainFlag and showFlag:

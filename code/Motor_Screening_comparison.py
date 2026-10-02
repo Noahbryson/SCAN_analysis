@@ -150,8 +150,10 @@ def plot_rsq(metric_data: pd.DataFrame, session_a: str, session_b: str) -> plt.F
       return fig
 
 
-subjectSessions = ["BJH079_aggregate", "BJH079_postRF_aggregate"]
-subject = "BJH079"
+# subjectSessions = ["BJH079_aggregate", "BJH079_postRF_aggregate"]
+subject = 'SLCH034'
+subjectSessions = [f"{subject}_aggregate", f"{subject}-postRF_aggregate"]
+# subject = "BJH079"
 method = "cluster"
 
 localEnv = platform.system()
@@ -161,7 +163,7 @@ if localEnv == "Windows":
 else:
       dataPath = userPath / "Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo"
 
-pairPath = dataPath / "Aggregate" / "pairs" / "BJH079_pre-v-post"
+pairPath = dataPath / "Aggregate" / "pairs" / f"{subject}_pre-v-post"
 erpPath = pairPath / method
 os.makedirs(pairPath, exist_ok=True)
 os.makedirs(erpPath, exist_ok=True)
@@ -187,7 +189,7 @@ save_fig(latencyFig, pairPath, "latencies")
 metricData = prepare_metric_data(a, subjectSessions[0])
 metricData.to_csv(pairPath / "paired_metrics_long.csv", index=False)
 
-sharedRepData = a.compare_shared_rep(subjectSessions[0], subjectSessions[1], paired=True, significant=False)
+sharedRepData = a.compare_shared_rep(subjectSessions[0], subjectSessions[1], paired=True, significant=True)
 sharedRepFig = plt.gcf()
 save_fig(sharedRepFig, pairPath, "shared_representation")
 sharedRepData.to_csv(pairPath / "shared_representation_long.csv", index=False)

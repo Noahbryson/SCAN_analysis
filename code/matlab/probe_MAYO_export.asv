@@ -1,0 +1,115 @@
+
+[bci_sig,bci_state,bci_param]=load_bcidat('/Users/nkb/Documents/NCAN/projects/inter-effectors/SCAN_MAYO_DATA/raw_data/share/Mayo_BRB/BRB_mot_bci2000/BRB_HTF/BRB_HTF_d1s1S000R03.dat');
+stimuli = bci_param.Stimuli;
+
+%%
+
+user = expanduser('~'); % Get local path for interoperability on different machines, function in my tools dir.
+task_file_root = fullfile(user,'Documents/NCAN/projects/inter-effectors/SCAN_MAYO_DATA/task_files');
+dump_root= fullfile(user,"Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo"); % Path to data
+
+
+% emg_table = readtable('/Users/nkb/Documents/NCAN/projects/inter-effectors/SCAN_MAYO_DATA/emg_description.csv');
+tab_out = "/Users/nkb/Documents/NCAN/projects/inter-effectors/SCAN_MAYO_DATA/stim_codes.mat";
+load(tab_out) % yields variable stim_codes, written to all folders for stimuli indexing.
+%% Load Processed Data
+close all
+subject = 'RSM';
+subject = strjoin({'Mayo',subject},'_');
+
+datapath = fullfile(dump_root,subject,subject,'preprocessed/*.mat');
+files = dir(datapath);
+% for i=1:length(files)
+%     load(fullfile(files(i).folder,files(i).name));
+% end
+
+
+
+
+taskFiles = dir(fullfile(task_file_root, subject, '*mot.mat'));
+task = load(fullfile(task_file_root, subject,taskFiles.name));
+stim = task.stim;
+handstim = stim==1;
+footstim = stim==3;
+facestim = stim==2;
+
+disp(subject)
+disp(task.ch_desc.emg_labels)
+
+
+task_emg = task.emg;
+task_emg = task_emg - task_emg(1,:);
+task_emg = abs(bandpass(task_emg,[20,400],task.srate));
+emg_power = abs(hilbert(task_emg));
+% emg_power = highpass(emg_power-emg_power(1,:),0.05,task.srate);
+emg_power = smoothdata(emg_power,"movmean",800);
+
+figure(1)
+tit = strsplit(subject,'_');
+tit = strjoin(tit,' ');
+sgtitle(tit)
+loc = 1;
+subplot(3,1,loc)
+% plot(task_emg(:,loc),LineWidth=0.1)
+hold on
+title(task.ch_desc.emg_labels(loc))
+ylim([0, max(emg_power(:,loc))])
+plot(handstim*0.25*max(emg_power(:,loc)),LineWidth=2)
+plot(footstim*0.25*max(emg_power(:,loc)),LineWidth=2)
+plot(facestim*0.25*max(emg_power(:,loc)),LineWidth=2)
+plot(emg_power(:,loc),LineWidth=2.5);
+hold off
+% legend('raw','hand','foot','face','power')
+legend('hand','foot','face','power')
+
+
+loc = 2;
+subplot(3,1,loc)
+% plot(task_emg(:,loc))
+hold on
+title(task.ch_desc.emg_labels(loc))
+ylim([0, max(emg_power(:,loc))])
+plot(handstim*0.25*max(emg_power(:,loc)),LineWidth=2)
+plot(footstim*0.25*max(emg_power(:,loc)),LineWidth=2)
+plot(facestim*0.25*max(emg_power(:,loc)),LineWidth=2)
+plot(emg_power(:,loc),LineWidth=2.5);
+hold off
+% legend('raw','hand','foot','face','power')
+legend('hand','foot','face','power')
+
+loc = 3;
+subplot(3,1,loc)
+% plot(task_emg(:,loc))
+hold on
+title(task.ch_desc.emg_labels(loc))
+plot(handstim*0.25*max(emg_power(:,loc)),LineWidth=2)
+plot(footstim*0.25*max(emg_power(:,loc)),LineWidth=2)
+plot(facestim*0.25*max(emg_power(:,loc)),LineWidth=2)
+plot(emg_power(:,loc),LineWidth=2.5);
+hold off
+% legend('raw','hand','foot','face','power')
+legend('hand','foot','face','power')
+
+ylim([0, max(emg_power(:,loc))])
+
+
+
+%% Rewrite EMG and Export
+reorder = [2,1,3];
+task_file_root = fullfile(user,'Documents/NCAN/projects/inter-effectors/SCAN_MAYO_DATA/task_files');
+tempdir = fullfile(task_file_root,'temp',subject);
+if ~exist(tempdir,'dir')
+    mkdir(tempdir);
+end
+taskFiles = dir(fullfile(task_file_root, subject, '*mot.mat'));
+
+
+
+emg_new = task.emg(:,reorder);
+disp(all(emg_new(:,1) == task.emg(:,reorder(1))))
+emg_old = task.emg;
+task.emg = emg_new;
+
+fout = fullfile(tempdir,taskFiles.name);
+save(fout,'-struct','task')
+disp("Reordered EMG saved to " + fout)

@@ -1,0 +1,16 @@
+{
+      "Mayo_CRS": "window is longer than input signal",
+      "Mayo_DKS": "'R-hand-forearm-flexor'",
+      "Mayo_EOW": "'sEEG'",
+      "Mayo_FOD": "'L-hand-forearm-flexor'",
+      "Mayo_IKR": "'NoneType' object is not subscriptable",
+      "Mayo_JBG": "window is longer than input signal",
+      "Mayo_MOM": "list index out of range",
+      "Mayo_MXB": "window is longer than input signal",
+      "Mayo_NFA": "window is longer than input signal",
+      "Mayo_RSM": "All arrays must be of the same length",
+      "Mayo_SPK": "index 0 is out of bounds for axis 0 with size 0",
+      "Mayo_TOS": "list index out of range",
+      "Mayo_USB": "index 0 is out of bounds for axis 0 with size 0",
+      "Mayo_WRS": "index 0 is out of bounds for axis 0 with size 0"
+}

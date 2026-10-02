@@ -2,7 +2,9 @@
 close all
 BCI2KPath = '/Users/nkb/Documents/NCAN/BCI2000tools';
 addpath(genpath('/Users/nkb/Documents/NCAN/code/SCAN_analysis/matlab'))
-bci2ktools(BCI2KPath);Subject = 'SLCH020'; % String of Subject Name
+bci2ktools(BCI2KPath);
+
+Subject = 'SLCH034-postRF'; % String of Subject Name
 user = expanduser('~'); % Get local path for interoperability on different machines, function in my tools dir.
 DataPath = sprintf("%s/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/%s",user,Subject); % Path to data
 
@@ -19,7 +21,7 @@ dataLocs = parseDir(dirContents,tgtFile,'beans');
 pathName = dataLocs{1}; % select file wanted if multiple runs of this experiment (ie pre and post ablation), alphabetical order
 
 for i = 1:length(dataLocs)
-
+    try
     pathName = dataLocs{i};
     tDir = sprintf('%s/%s',DataPath,pathName); % path to specific session
     files = dir(tDir); % file list
@@ -34,7 +36,12 @@ for i = 1:length(dataLocs)
         tgt = strcat(tgt,'_1.dat');
         [data2,states2,parms2] = load_bcidat(strcat(tDir,'/',tgt{1}),1);
         [data2,states2] = resampleSecondaryData(data2,states2,parms2.SamplingRate.NumericValue,parms.SamplingRate.NumericValue,0);
+        try
         [DATA1,DATA2,STATES1,STATES2] = alignSecondaryData(data, data2,states,states2);
+        catch ME
+            disp(ME.message)
+            [DATA1,DATA2,STATES1,STATES2] = manualAlignSecondaryData(data, data2,states,states2);
+        end
         [data,states] = aggregateData(DATA1,DATA2,STATES1,STATES2);
     end
     [keys,type] = labelDataChannels(data,channels); % generate labels from data and channel description
@@ -47,6 +54,9 @@ for i = 1:length(dataLocs)
     states = writeStates2MAT(saveDir,states); % write states as a structure to .mat (v7.0) files
     writeStimuliCodes(parms,saveDir) % write stimuli code parm as a structure to .mat (v7.0) files -> will eventually reshape and encode other metadata like sampling rate
     writeMATwithHeader(saveDir,Subject,data,keys,1); % write labeled data as a structure to .mat (v7.0) files
+    catch ME
+        disp(ME.message)
+    end
 end
 
 
@@ -54,6 +64,14 @@ function channels = loadElectrodeChannels(dir)
 fname = sprintf("%s/channels.csv",dir);
 % otps = detectImportOptions(fname);
 channels = readtable(fname);
+end
+
+
+function [X1,X2,Y1,Y2] = manualAlignSecondaryData(x1,x2,y1,y2)
+
+
+
+
 end
 
 
@@ -106,6 +124,19 @@ thresh2 = 3*std(sync2);
 x1 = detectThresholdCrossing(sync1, thresh1, 3500);
 x2 = detectThresholdCrossing(sync2, thresh2, 3500);
 avg_offset = cast(mean(x1-x2),'int32');
+
+%
+% fields=fieldnames(states2);
+% for i=1:idx
+% key = fields{i};
+% res = unique(states2.(key));
+% if length(res)>1
+% disp(key)
+% end
+% end
+%
+
+
 %avg_offset > 0 primary lags secondary, avg_offset < 0 primary leads secondary
 
 % if datastreams are different lengths, adjust them to the length of

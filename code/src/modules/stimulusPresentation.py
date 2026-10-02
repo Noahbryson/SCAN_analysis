@@ -26,6 +26,7 @@ class format_Stimulus_Presentation_Session():
         self.task_epochs = {}
         self.rest_epochs = {}
         self.processFlag = False
+        self.fs=None
         for file in files:
             if file.find(subject)>-1:
                 if HDF:
@@ -65,6 +66,11 @@ class format_Stimulus_Presentation_Session():
                 stimuli = scio.loadmat(loc/file,mat_dtype=True,simplify_cells=True)
                 stimuli = stimuli['stim_codes']
                 self.stimuli = self._reshapeStimuliMatrix(stimuli=stimuli)
+            elif file.find('srate')>-1:
+                with open(loc/file,'r') as fp:
+                    temp = fp.readline()
+                fs = int(temp)
+                self.fs = fs
             else:
                 print(f'{file} not loaded on init')
         temp = {k:self.channels[k] for k in self.data.keys()}
@@ -112,20 +118,28 @@ class format_Stimulus_Presentation_Session():
             pickle.dump(self)
 
     def epochStimulusCode_SCANtask(self,plot_states:False):
-        data = self.states['StimulusCode']
+        
+        state_timeseries = self.states['StimulusCode']
+        "truncate start of data until StimulusCode==0"
+        start_idx = np.where(state_timeseries==0)[0][0]
+        for i,j in self.data.items():
+            self.data[i] = j[start_idx:]
+        state_timeseries = state_timeseries[start_idx:]
+        self.states['StimulusCode'] = state_timeseries
+        ""
         moveEpochs = {}
-        onset_shift = 1000
-        offset_shift = 3000
+        onset_shift = int(0.25*self.fs)
+        offset_shift = int(0.25*self.fs)
         for stim in self.stimuli.values(): # get intervals for each of the stimulus codes
             code = stim[0]['code']
             stim_type = stim[6]
-            loc = np.where(data==code)
+            loc = np.where(state_timeseries==code)
             intervals = find_intervals(loc[0])
             for i,v in enumerate(intervals):
                 intervals[i] = [v[0]-onset_shift,v[1]+offset_shift]
 
             moveEpochs[stim_type] = intervals
-        loc = np.where(data==0) # get intervals for stim code of zero (at rest)
+        loc = np.where(state_timeseries==0) # get intervals for stim code of zero (at rest)
         intervals = find_intervals(loc[0])
         for i,v in enumerate(intervals):
                 intervals[i] = [offset_shift+v[0],v[1]-onset_shift]
@@ -222,10 +236,11 @@ class format_Stimulus_Presentation_Session():
     def plotStimuli(self,epochs,**kwargs)->plt.axes:
         import distinctipy
         data = self.states['StimulusCode']
-        t = np.linspace(0,len(data)/2000,len(data))
+        t = np.linspace(0,len(data)/self.fs,len(data))
         
         if not 'ax' in kwargs:
             ax = plt.subplot(1,1,1)
+        else: ax = kwargs['ax']
         ax.plot(t,data)
         cmap = distinctipy.get_colors(len(epochs))
         for i,k in enumerate(epochs.keys()):
