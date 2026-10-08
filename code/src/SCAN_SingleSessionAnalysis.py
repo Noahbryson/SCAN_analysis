@@ -8,6 +8,7 @@ import pandas as pd
 from .functions.filters import *
 import distinctipy
 import math
+from collections import defaultdict
 import pickle
 import seaborn as sns
 import re
@@ -20,6 +21,15 @@ from .functions.stat_methods import mannwhitneyU, cohendsD, calc_ROC, geometric_
 from .modules.stimulusPresentation import format_Stimulus_Presentation_Session
 from .modules.response_datastructs import ERP_struct, export_ERP_Obj
 from PyBrain.modules.VERA_PyBrain import PyBrain
+
+
+def natural_sort_key(value: str) -> list:
+    return [
+        int(part) if part.isdigit() else part.lower()
+        for part in re.split(r"(\d+)", value)
+    ]
+
+
 class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
     def __init__(self,path:str or Path,subject:str,sessionID:str,fs:int=2000,load=True,epoch_by_movement:bool=True,plot_stimuli:bool=False,gammaRange=[65,115],refType: str='common',remove_trajectories:list[str]=[]) -> None: # type: ignore
         """
@@ -48,16 +58,24 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         self.subject = subject
         self.sessionID = sessionID
         self.aggregate_results_dir = path / 'Aggregate'            
+        self.muscleMapping = defaultdict(list)
         if os.path.exists(self.main_dir/self.subject/'muscle_mapping.csv'):
             with open(self.main_dir/self.subject/'muscle_mapping.csv', 'r') as fp:
                 reader = csv.reader(fp)
-                self.muscleMapping: dict = {rows[0]:rows[1:] for rows in reader}
-                for i,j in self.muscleMapping.items():
-                    remap = []
-                    for entry in j:
-                        remap.append(entry.split('_')[0])
-                    self.muscleMapping[i] = remap
-                print(f'loaded muscle mapping from file: {self.muscleMapping}')
+                rowList = [[i for i in row] for row in reader]
+            for row in rowList:
+                self.muscleMapping[row[0]].append(row[1:])
+            for i,j in self.muscleMapping.items():
+                remap = []
+                for entry in j:
+                    if isinstance(entry,list): 
+                        s=entry[0]
+                    else:
+                        s = entry
+                    numstrip = re.sub(r"[^a-zA-Z]+$", "", s)
+                    remap.append(numstrip)
+                self.muscleMapping[i] = remap
+            print(f'loaded muscle mapping from file: {self.muscleMapping}')
         else:
             self.muscleMapping = {'1_Hand':['wristExtensor', 'ulnar'], '3_Foot':['TBA'],'2_Tongue':['tongue']}
             print(f'using default muscle mapping: {self.muscleMapping}')
@@ -79,10 +97,14 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         self._verifyEpochValidity()
         self.colorPalletBest = [(62/255,108/255,179/255), (27/255,196/255,225/255), (129/255,199/255,238/255),(44/255,184/255,149/255),(0,129/255,145/255), (193/255,189/255,47/255),(200/255,200/255,200/255)]
         self.data = self._processSignals(load,refType)
+        
+        self._audit_muscle_mapping()
+        
         self.remove_trajectory(remove_trajectories)
         # self.session_info.data = self.getBroadBandGamma(gammaType='wide')
         # self.sessionEMG = self.data['EMG']
         self.data['sEEG'], self.ref = self.remove_references()
+        
         self.ERP_epochs = self._epochERPs()
         self.task_epochs = self._epochData('move')
         self.rest_epochs = self._epochData('rest')
@@ -93,6 +115,45 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         self.rereferenceType = refType
         print('end init')
 
+    def _audit_muscle_mapping(self) -> None:
+        emg_channels = list(self.data['EMG']['EMG'].keys())
+        audited_mapping = {}
+
+        for movement, mapped_muscles in self.muscleMapping.items():
+            matched_channels = []
+            missing_muscles = []
+
+            for muscle in mapped_muscles:
+                muscle_match = self._match_emg_channel(muscle,emg_channels)
+                if len(muscle_match) == 0:
+                    missing_muscles.append(muscle)
+                matched_channels.extend(muscle_match)
+
+            audited_mapping[movement] = list(dict.fromkeys(matched_channels))
+
+            if len(missing_muscles) > 0:
+                print(f'No EMG channel match for {movement}: {missing_muscles}')
+
+            if len(audited_mapping[movement]) == 0:
+                raise ValueError(f'No EMG channels matched muscle mapping for {movement}: {mapped_muscles}')
+
+        self.muscleMapping = audited_mapping
+        print(f'audited muscle mapping: {self.muscleMapping}')
+
+    def _match_emg_channel(self, muscle: str, emg_channels: list[str]) -> list[str]:
+        muscle = str(muscle).strip()
+        if muscle in emg_channels:
+            return [muscle]
+
+        muscle_lower = muscle.lower()
+        muscle_norm = self._normalize_channel_match_text(muscle)
+        return [
+            channel for channel in emg_channels
+            if muscle_lower in channel.lower() or muscle_norm in self._normalize_channel_match_text(channel)
+        ]
+
+    def _normalize_channel_match_text(self, value: str) -> str:
+        return re.sub(r'[^a-z0-9]+','',value.lower())
     
     def plot_session_EMG_motor_onsets(self,save:bool=False):
         from collections import defaultdict
@@ -101,13 +162,13 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         inputs = defaultdict(dict)
         reverse_mapping = {j[0]:i for i,j in self.muscleMapping.items()}
         for i,j in epoch_info.items():
-            key = i.split('_')[-1].lower()
-            key = self.muscleMapping[i][0]
-            motor_locs = np.asarray(motor_onset[i]) + np.asarray(j)
-            inputs['move ON'].update({key:motor_locs[:,0]})
-            inputs['move OFF'].update({key:motor_locs[:,1]})
-            inputs['state ON'].update({key:np.array(j)[:,0]})
-            inputs['state OFF'].update({key:np.array(j)[:,1]})
+            
+            for key in self.muscleMapping[i]:
+                motor_locs = np.asarray(motor_onset[i]) + np.asarray(j)
+                inputs['move ON'].update({key:motor_locs[:,0]})
+                inputs['move OFF'].update({key:motor_locs[:,1]})
+                inputs['state ON'].update({key:np.array(j)[:,0]})
+                inputs['state OFF'].update({key:np.array(j)[:,1]})
             
         
         
@@ -343,31 +404,85 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
         output = {}
         output['EEG'] = EEG
         return output
+
+    def _extract_sEEG_trajectories(self, channel_names) -> set[str]:
+        trajectories = set()
+        channel_bases = [channel.rsplit('_',1)[0] for channel in channel_names]
+        stem_channel_numbers = defaultdict(list)
+        numeric_trajectory_candidates = defaultdict(list)
+
+        for base in channel_bases:
+            match = re.match(r'^(.+?)(\d+)$',base)
+            if match is None:
+                trajectories.add(base)
+                continue
+
+            stem, channel_digits = match.groups()
+            trajectories.add(stem)
+            stem_channel_numbers[stem].append(int(channel_digits))
+
+            if len(channel_digits) > 1:
+                numeric_trajectory_candidates[f'{stem}{channel_digits[0]}'].append(channel_digits[1:])
+
+        for candidate, channel_numbers in numeric_trajectory_candidates.items():
+            candidate_stem = re.sub(r'\d+$','',candidate)
+            stem_numbers = stem_channel_numbers[candidate_stem]
+            min_channel_number = min(stem_numbers)
+
+            if min_channel_number > 10 and len(channel_numbers) > 1:
+                trajectories.add(candidate)
+                trajectories.discard(candidate_stem)
+
+        return trajectories
+
     def process_sEEG(self,sEEG:dict,rerefType: str,commonAvg)-> dict:
-        
-        trajectories = [key[0:2].replace('_','') for key in sEEG.keys()]
-        trajectories = set(trajectories)
+        import re
+
+        trajectories = self._extract_sEEG_trajectories(sEEG.keys())
+        trajectories= set(trajectories)
+        printstr = ''.join([f'{i}\n' for i in trajectories])
+        print(f'---------\ntrajectories extracted\n{printstr}\n--------')
         if 'RE' in trajectories:
             trajectories.remove('RE')
             trajectories.add('REF')
         
         output = {}
+        def get_trajectory(name: str, trajectories: set[str]) -> str | None:
+            base = name.rsplit("_", 1)[0]
+            matches = [
+                traj for traj in trajectories
+                if base.startswith(traj) and base[len(traj):].isdigit()
+            ]
+
+            if not matches:
+                return None
+
+            return max(matches, key=len)
+
         for traj in trajectories:
-            data = [v for k,v in sEEG.items() if k.find(traj)>-1]
-            labels = [k for k,_ in sEEG.items() if k.find(traj)>-1]
-            labelSort = [int(re.findall(r"\d+",k.split('_')[0])[0]) for k in sEEG.keys() if k.find(traj)>-1]
-            indexVals = sorted(range(len(labelSort)), key=lambda k: labelSort[k])
+            data = [v for k, v in sEEG.items() if get_trajectory(k,trajectories) == traj]
+            labels = [k for k in sEEG.keys() if get_trajectory(k,trajectories) == traj]
+
+            # data = [v for k,v in sEEG.items() if k[0:len(traj)]==traj and not k[len(traj)].isalpha()]
+            # labels = [k for k,_ in sEEG.items() if k[0:len(traj)]==traj and not k[len(traj)].isalpha()]
+            # labelSort = [int(re.findall(r"\d+",k.split('_')[0])[0]) for k in sEEG.keys() if k.find(traj)>-1]
+            labelSort = labels.copy()
+            labelSort.sort(key=natural_sort_key)
+            indexVals = [labels.index(i) for i in labelSort]
             data = [data[i] for i in indexVals]
             labels = [labels[i] for i in indexVals]
                 
             if rerefType.lower().find('bip')>-1:
                 traj_data = {}
                 for idx,vals in enumerate(data[0:-1]):
-                    e = re.findall(r"\d+",labels[idx+1].split('_')[0])
-                    e1 = labels[idx].split('_')[0]
-                    e1int = int(re.findall(r"\d+",e1)[0])
-                    if e1int + 1 == int(e[0]):
-                        label = f'{e1}-b-{e[0]}'
+                    
+                    e2 = labels[idx+1].split('_')[0].replace(traj,'')
+                    e1 = labels[idx].split('_')[0].replace(traj,'')
+                    e2Int = int(e2)
+                    # e1int = int(re.findall(r"\d+",e1)[0])
+                    e1int = int(e1)
+                    if e1int + 1 == e2Int:
+                        label = f'{e1}-b-{e2[0]}'
                         temp = self._bipolarReference(data[idx+1],vals)
                         # temp = notch(temp,self.fs,60,30,1)
                         traj_data[label] = temp
@@ -390,22 +505,22 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                 traj_data = {}
                 for idx,vals in enumerate(data):
                     if idx == 0:
-                        e = re.findall(r"\d+",labels[idx+1].split('_')[0])
+                        e2 = re.findall(r"\d+",labels[idx+1].split('_')[0])
                         e1 = labels[idx].split('_')[0]
                         e1int = int(re.findall(r"\d+",e1)[0])
-                        if e1int + 1 == int(e[0]):
-                            label = f'{e1}-b-{e[0]}'
+                        if e1int + 1 == int(e2[0]):
+                            label = f'{e1}-b-{e2[0]}'
                             temp = self._bipolarReference(data[idx+1],vals)
                         # temp = notch(temp,self.fs,60,30,1)
                             traj_data[label] = temp
                         else:
                             pass
                     elif idx == len(data)-1:
-                        e = re.findall(r"\d+",labels[idx+1].split('_')[0])
+                        e2 = re.findall(r"\d+",labels[idx+1].split('_')[0])
                         e1 = labels[idx].split('_')[0]
                         e1int = int(re.findall(r"\d+",e1)[0])
-                        if e1int + 1 == int(e[0]):
-                            label = f'{e1}-b-{e[0]}'
+                        if e1int + 1 == int(e2[0]):
+                            label = f'{traj}{e1}-b-{e2[0]}'
                             temp = self._bipolarReference(vals,data[idx-1])
                         # temp = notch(temp,self.fs,60,30,1)
                             traj_data[label] = temp
@@ -1001,7 +1116,7 @@ class SCAN_SingleSessionAnalysis(format_Stimulus_Presentation_Session):
                 for traj,chans in self.data['sEEG'].items():
                     num_chan = len(chans)
                     num_sqr =int(np.ceil(np.sqrt(num_chan)))
-                    fig, axs = plt.subplots(num_sqr,num_sqr,sharex=True,sharey=True,figsize=(20,15))
+                    fig, axs = plt.subplots(num_sqr,num_sqr,sharex=True,sharey=True,figsize=(20,15),squeeze=False)
                     ax_counter = axs.ravel()
                     for idx,i in enumerate(chans):
                         ax1 = ax_counter[idx]

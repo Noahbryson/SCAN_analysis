@@ -1,189 +1,184 @@
+function [subjectLog, subjectPass] = import_MAYO_data(subject,paths,exportFlag,stimuliFlag)
+if nargin < 2 || isempty(paths)
+    paths = get_default_paths();
+end
 
-user = expanduser('~'); % Get local path for interoperability on different machines, function in my tools dir.
-input_root = fullfile(user,"Documents/NCAN/projects/inter-effectors/SCAN_MAYO_DATA/task_files");
-brain_root = fullfile(user,"Documents/NCAN/projects/inter-effectors/SCAN_MAYO_DATA/imaging");
-dump_root= fullfile(user,"Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo"); % Path to data
-emg_table = readtable('/Users/nkb/Documents/NCAN/projects/inter-effectors/SCAN_MAYO_DATA/emg_description.csv');
-tab_out = "/Users/nkb/Documents/NCAN/projects/inter-effectors/SCAN_MAYO_DATA/stim_codes.mat";
-load(tab_out) % yields variable stim_codes, written to all folders for stimuli indexing.
+if nargin < 3 || isempty(exportFlag)
+    exportFlag = false;
+end
 
-% %%
-% template_dat = struct();
-% load('/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/BJH071/day1_run1_L/preprocessed/BJH071.mat');
-% load('/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/BJH071/day1_run1_L/preprocessed/channeltypes.mat');
-% load('/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/BJH071/day1_run1_L/preprocessed/states.mat');
-% load('/Users/nkb/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/BJH071/day1_run1_L/preprocessed/stimuli.mat');
-% template_dat.signals = signals;
-% template_dat.chan_types=chan_types;
-% template_dat.states=states;
-% template_dat.stim_codes=stim_codes;
-%%
+if nargin < 4 || isempty(stimuliFlag)
+    stimuliFlag = true;
+end
 
+subject = normalize_subject_name(subject);
+subject_ID = strsplit(subject,'-');
+subject_ID = subject_ID{1};
 
-exportFlag=false;
-
-% EMG_remap = struct(); EMG_remap.hand = 'wristExtensor'; EMG_remap.foot = 'TBA'; EMG_remap.tongue = 'tongue';
-task_pattern = '_mot.mat';
-subjects = dir(fullfile(input_root,'Mayo*'));
-emg_tags = struct();
-emg_loc = 1;
 subjectLog = struct();
-for i=1:length(subjects)
-    try
-    files = dir(fullfile(input_root,subjects(i).name,'*mot.mat'));
-    subject = subjects(i).name;
-    subject_ID = strsplit(subject,'-');
-    subject_ID = subject_ID{1};
-    subjectLog(i).ID = subject;
+subjectLog.ID = subject;
+
+try
     disp(subject)
-    data = load(fullfile(files.folder,files.name));
+
+    emg_table = readtable(paths.emg_table);
+    files = dir(fullfile(paths.input_root,subject,'*mot.mat'));
+    if isempty(files)
+        error('%s: no mot file found',subject)
+    end
+
+    data = load(fullfile(files(1).folder,files(1).name));
     srate = data.srate;
 
-    stimuli_root = fullfile(user,'Documents/NCAN/projects/inter-effectors/SCAN_MAYO_DATA/raw_data/stimcodes');
-    stim_codes = load_stimuli_from_dat(fullfile(stimuli_root,subject,'samplerun.dat'));
-    
+    stim_codes = load_stimuli_from_dat(fullfile(paths.stimuli_root,subject,'samplerun.dat'));
     stim_values = {stim_codes.Value{6,:}}';
     stim_names = cellfun(@(x) strsplit_return_end(x,'_'),stim_values,'UniformOutput',false);
     stim_values = number_stimcodes(stim_names);
-    stim_codes.Value(6,:) = stim_values;
-    
     
 
-
-    
-    for x=1:length(fieldnames(data.ch_desc))
-        key = fieldnames(data.ch_desc);
-        key = key{x};
-        subjectLog(i).(key) = data.ch_desc.(key);
+    ch_desc_fields = fieldnames(data.ch_desc);
+    for x=1:length(ch_desc_fields)
+        key = ch_desc_fields{x};
+        subjectLog.(key) = data.ch_desc.(key);
     end
-    brain_file = dir(fullfile(brain_root,subjects(i).name,'*brain.mat'));
-    if length(brain_file)<1
-        
-        brain_file = dir(fullfile(brain_root,subject_ID,'*brain.mat'));
-    end
-    brain_info = load(fullfile(brain_file.folder,brain_file.name));
 
+    brain_file = dir(fullfile(paths.brain_root,subject,'*brain.mat'));
+    if isempty(brain_file)
+        brain_file = dir(fullfile(paths.brain_root,subject_ID,'*brain.mat'));
+    end
+
+    if isempty(brain_file)
+        error('%s: no brain file found',subject)
+    end
+
+    brain_info = load(fullfile(brain_file(1).folder,brain_file(1).name));
     data_array = data.data;
-    
-        labels = brain_info.lbls; 
-        labels = labels(data.ch_desc.brain);
-        signals = struct();
-        chan_types = struct();
-        idx_counter = 1;
-        delim = 'xxx';
+    labels = brain_info.lbls;
+    labels = labels(data.ch_desc.brain);
 
-        for j=1:size(data_array,2)
-            tag=sprintf('%s_%d',labels{j},idx_counter);
-            tag=strrep(tag,' ',delim);
-            tag=strrep(tag,'-',delim);
-            signals.(tag) = data_array(:,j);
-            chan_types.(tag) = 'sEEG';
-            idx_counter=idx_counter+1;
-        end
+    signals = struct();
+    chan_types = struct();
+    idx_counter = 1;
+    delim = 'xxx';
 
-        for j=1:size(data.emg,2) % split EMG to be re-referenced in my pipeline, just a standardization convention nothing wild.
-            temp = data.emg(:,j);
-            temp = temp / 2;
-            temp_inv = -1*temp;
-            % emg half 1
-            
-            tag=sprintf('%s_1_%d',data.ch_desc.emg_labels{j},idx_counter);
-            tag=strrep(tag,' ',delim);
-            tag=strrep(tag,'/',delim);
-            tag=strrep(tag,'-',delim);
-
-
-
-            emg_tags(emg_loc).sub = subject;
-            emg_tags(emg_loc).tag = tag;
-            emg_tags(emg_loc).ch_name = data.ch_desc.emg_labels{j};
-            emg_loc = emg_loc + 1;
-            try
-                signals.(tag) = temp;
-                chan_types.(tag) = 'EMG';
-                idx_counter=idx_counter+1;
-
-                % emg half 2
-                tag=sprintf('%s_2_%d',data.ch_desc.emg_labels{j},idx_counter);
-                tag=strrep(tag,' ',delim);
-                tag=strrep(tag,'/',delim);
-                tag=strrep(tag,'-',delim);
-                signals.(tag) = temp_inv;
-                chan_types.(tag) = 'EMG';
-                idx_counter=idx_counter+1;
-            catch ME
-                disp(ME.message)
-                error('%s: EMG Error',subject);
-            end
-
-        end
-        states = struct();
-        states.StimulusCode = data.stim;
-
-        % export signals, stim_codes, states, chan_types, muscle_mapping
-        
-        outdir = fullfile(dump_root,subject_ID);
-        session_dir = fullfile(outdir,subject,'preprocessed');
-        
-        muscle_mapping = emg_table(contains(emg_table.sub,subject),{'mapping','tag'});
-        muscle_mapping = correct_muscle_mapping(muscle_mapping,stim_values);
-        
-        % muscle_mapping = emg_table(contains(emg_table.sub,subject),{'mapping','ch_name'});
-        if size(muscle_mapping,1)==0
-            error('%s no muscle mapping... likely no EMG detected from input data',subject)
-        else
-            
-            if exportFlag
-                if ~isfolder(session_dir)
-                    mkdir(session_dir)
-                end
-                writetable(muscle_mapping, fullfile(outdir,'muscle_mapping.csv'), 'WriteVariableNames', false); %muscle mapping output
-                save(fullfile(session_dir,sprintf('%s.mat',subject)),'signals')
-                save(fullfile(session_dir,'states.mat'),'states')
-                save(fullfile(session_dir,'channeltypes.mat'),'chan_types')
-                save(fullfile(session_dir,'stimuli.mat'),'stim_codes')
-                fID = fopen(fullfile(session_dir,'srate.txt'),'w');
-                fprintf(fID,'%d',srate);
-                fclose(fID);
-                
-                fprintf('exported\n')
-            else
-                fprintf('Not Exported\n')
-            end
-            subjectLog(i).result='pass';
-            fprintf('%s processed successfully\n---------------\n',subject)
-        end
-        
-
-    catch ME
-        formatStr = sprintf('%s failed, not exported',subject);
-        report = getReport(ME,"extended","hyperlinks","off");
-        warning('USER:ProcessingWarning','%s',report);
-        subjectLog(i).result='fail';
+    for j=1:size(data_array,2)
+        tag=sprintf('%s_%d',labels{j},idx_counter);
+        tag=strrep(tag,' ',delim);
+        tag=strrep(tag,'-',delim);
+        signals.(tag) = data_array(:,j);
+        chan_types.(tag) = 'sEEG';
+        idx_counter=idx_counter+1;
     end
 
+    for j=1:size(data.emg,2)
+        temp = data.emg(:,j) / 2;
+        temp_inv = -1*temp;
 
+        tag=sprintf('%s_1_%d',data.ch_desc.emg_labels{j},idx_counter);
+        tag=sanitize_tag(tag,delim);
+        signals.(tag) = temp;
+        chan_types.(tag) = 'EMG';
+        idx_counter=idx_counter+1;
 
+        tag=sprintf('%s_2_%d',data.ch_desc.emg_labels{j},idx_counter);
+        tag=sanitize_tag(tag,delim);
+        signals.(tag) = temp_inv;
+        chan_types.(tag) = 'EMG';
+        idx_counter=idx_counter+1;
+    end
 
+    states = struct();
+    states.StimulusCode = data.stim;
 
+    outdir = fullfile(paths.dump_root,subject_ID);
+    session_dir = fullfile(outdir,subject,'preprocessed');
+
+    muscle_mapping = emg_table(contains(emg_table.sub,subject),{'mapping','tag'});
+    [muscle_mapping,stim_values] = correct_muscle_mapping(muscle_mapping,stim_values);
+    stim_codes.Value(6,:) = stim_values;
+
+    if size(muscle_mapping,1)==0
+        error('%s no muscle mapping... likely no EMG detected from input data',subject)
+    end
+
+    if exportFlag
+        if ~isfolder(session_dir)
+            mkdir(session_dir)
+        end
+
+        writetable(muscle_mapping, fullfile(outdir,'muscle_mapping.csv'), 'WriteVariableNames', false);
+        save(fullfile(session_dir,sprintf('%s.mat',subject)),'signals')
+        save(fullfile(session_dir,'states.mat'),'states')
+        save(fullfile(session_dir,'channeltypes.mat'),'chan_types')
+        parms = struct();
+        parms.Stimuli = stim_codes;
+        writeStimuliCodes(parms,fullfile(session_dir))
+        fID = fopen(fullfile(session_dir,'srate.txt'),'w');
+        fprintf(fID,'%d',srate);
+        fclose(fID);
+
+        fprintf('exported\n')
+    elseif stimuliFlag
+        parms = struct();
+        parms.Stimuli = stim_codes;
+        writeStimuliCodes(parms,fullfile(session_dir))
+        fprintf('exported stimuli only\n')
+    else
+        fprintf('Not Exported\n')
+    end
+
+    subjectLog.result='pass';
+    fprintf('%s processed successfully\n---------------\n',subject)
+catch ME
+    report = getReport(ME,"extended","hyperlinks","off");
+    warning('USER:ProcessingWarning','%s',report);
+    subjectLog.result='fail';
+end
+
+subjectPass = build_subject_pass(subjectLog);
 
 end
 
-subjectPass= struct('ID',{subjectLog(:).ID},'result',{subjectLog(:).result});
-res_log = isequal({subjectLog(:).result},'pass');
-subjectPass(:).logical = res_log;
-%%
+function paths = get_default_paths()
+user = expanduser('~');
+paths = struct();
+paths.input_root = fullfile(user,"Documents/NCAN/projects/inter-effectors/SCAN_MAYO_DATA/task_files");
+paths.brain_root = fullfile(user,"Documents/NCAN/projects/inter-effectors/SCAN_MAYO_DATA/imaging");
+paths.dump_root = fullfile(user,"Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo");
+paths.emg_table = fullfile(user,"Documents/NCAN/projects/inter-effectors/SCAN_MAYO_DATA/emg_description.csv");
+paths.stimuli_root = fullfile(user,"Documents/NCAN/projects/inter-effectors/SCAN_MAYO_DATA/raw_data/stimcodes");
+end
+
+function subject = normalize_subject_name(subject)
+if isstruct(subject)
+    subject = subject.name;
+elseif isstring(subject)
+    subject = char(subject);
+end
+end
+
+function subjectPass = build_subject_pass(subjectLog)
+subjectPass = struct();
+subjectPass.ID = subjectLog.ID;
+subjectPass.result = subjectLog.result;
+subjectPass.logical = strcmp(subjectLog.result,'pass');
+end
+
+function tag = sanitize_tag(tag,delim)
+tag=strrep(tag,' ',delim);
+tag=strrep(tag,'/',delim);
+tag=strrep(tag,'-',delim);
+end
+
 function stimuli = load_stimuli_from_dat(fp)
+fp = char(fp);
 [~,~,params] = load_bcidat(fp);
 stimuli = params.Stimuli;
 end
 
 function outStr = strsplit_return_end(inStr,delim)
-
-
 x = strsplit(inStr,delim);
 outStr=x{end};
-
 end
 
 function values = number_stimcodes(stim_codes)
@@ -191,13 +186,14 @@ values = stim_codes;
 for i=1:length(stim_codes)
     values{i} = sprintf('%d_%s',i,stim_codes{i});
 end
-
 end
 
-function muscle_mapping = correct_muscle_mapping(muscle_mapping,stim_values)
+function [muscle_mapping,stim_values] = correct_muscle_mapping(muscle_mapping,stim_values)
 mapping_values = cellstr(muscle_mapping.mapping);
 stim_values = cellstr(stim_values);
+stim_values = cellfun(@(x) strrep(x,'z',''),stim_values,'UniformOutput',false);
 stim_names = cellfun(@(x) strsplit_return_end(x,'_'),stim_values,'UniformOutput',false);
+
 
 for i=1:length(mapping_values)
     if ismember(mapping_values{i},stim_values)
@@ -217,5 +213,4 @@ for i=1:length(mapping_values)
 end
 
 muscle_mapping.mapping = mapping_values;
-
 end

@@ -18,6 +18,7 @@ else:
 
 subject = 'BJH079_postRF'
 subject = 'SLCH034-postRF'
+subject = 'DSMC003'
 # subject = 'SLCH034'
 # subject = 'BJH041'
 gammaRange = [70,170]
@@ -32,7 +33,7 @@ aggpath = dataPath / 'Aggregate' / f'{subject}_{session}'
 
 laplacian = False
 bipolar = True
-loadData=True
+loadData=False
 save = True
 ERP_flag = False
 side = 'both'
@@ -88,6 +89,7 @@ a = SCAN_SingleSessionAnalysis(dataPath,subject,session,remove_trajectories=remo
     load=loadData,plot_stimuli=True,gammaRange=gammaRange,refType=reref)
 
 a.plot_session_EMG()
+a.plot_session_EMG_motor_onsets(True)
 # plt.show()
 a.save_movement_latencies()
 a.plot_movement_latencies()
@@ -131,7 +133,6 @@ t_names = [i[0] for i in t_]
 t_colors = [i[1] for i in t_]
 allChans = tuning['channel'].to_list()
 shared_rep = a.shared_representation(effect_of_interest,sig_chans)
-if ERP_flag: a.run_ERP_processing(show=False,save=True,beta=True)
 
 showFlag = True
 if brainFlag and showFlag:
@@ -199,4 +200,5 @@ else:
         print(i[0],': ',i[1])
         targets.append(i[0])
     
+if ERP_flag: a.run_ERP_processing(show=False,save=True,beta=True)
 plt.show()

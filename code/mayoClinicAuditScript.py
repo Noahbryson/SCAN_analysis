@@ -22,6 +22,7 @@ brainType = "patient_brain"
 laplacian = False
 bipolar = True
 loadData=False
+# loadData=True
 save = True
 ERP_flag = False
 showFlag = False
@@ -39,7 +40,7 @@ else:
 
 
 
-subject = 'Mayo_CRS'
+subject = 'Mayo_JBG'
 subjects = [subject]
 
 

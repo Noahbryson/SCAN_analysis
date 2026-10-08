@@ -142,9 +142,9 @@ for subject in sorted(subjects):
                         targets.append(i[0])
                     success_log.update({subject:[session]})
             except Exception as err:
-                print(err)
-                print(f'aborting {subject}')
-                error_log[subject] = str(err)
+                print(err.with_traceback())
+                print(f'aborting {session}')
+                error_log[session] = str(err.with_traceback())
             plt.close('all')
                 
 import json

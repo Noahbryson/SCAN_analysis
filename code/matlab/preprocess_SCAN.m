@@ -4,7 +4,7 @@ BCI2KPath = '/Users/nkb/Documents/NCAN/BCI2000tools';
 addpath(genpath('/Users/nkb/Documents/NCAN/code/SCAN_analysis/matlab'))
 bci2ktools(BCI2KPath);
 
-Subject = 'SLCH034-postRF'; % String of Subject Name
+Subject = 'DSMC003'; % String of Subject Name
 user = expanduser('~'); % Get local path for interoperability on different machines, function in my tools dir.
 DataPath = sprintf("%s/Library/CloudStorage/Box-Box/Brunner Lab/DATA/SCAN_Mayo/%s",user,Subject); % Path to data
 

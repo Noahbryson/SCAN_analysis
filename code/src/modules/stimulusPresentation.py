@@ -73,6 +73,9 @@ class format_Stimulus_Presentation_Session():
                 self.fs = fs
             else:
                 print(f'{file} not loaded on init')
+                
+        self.data = {i.replace('xxx','-'):j for i,j in self.data.items()} # replace placeholder val (xxx) from matstruct limitations with a dash (-)
+        self.channels = {i.replace('xxx','-'):j for i,j in self.channels.items()} # replace placeholder val (xxx) from matstruct limitations with a dash (-)
         temp = {k:self.channels[k] for k in self.data.keys()}
         self.channels = temp
         signalTypes = set(self.channels.values())

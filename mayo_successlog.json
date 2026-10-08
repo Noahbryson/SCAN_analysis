@@ -14,9 +14,6 @@
       "Mayo_BRB": [
             "Mayo_BRB"
       ],
-      "Mayo_DIS": [
-            "Mayo_DIS"
-      ],
       "Mayo_GMG": [
             "Mayo_GMG"
       ],
@@ -26,8 +23,8 @@
       "Mayo_IBW": [
             "Mayo_IBW"
       ],
-      "Mayo_NMB": [
-            "Mayo_NMB"
+      "Mayo_MHU": [
+            "Mayo_MHU"
       ],
       "Mayo_PAS": [
             "Mayo_PAS-L"
@@ -40,24 +37,6 @@
       ],
       "Mayo_SPK": [
             "Mayo_SPK-L"
-      ],
-      "Mayo_TEL": [
-            "Mayo_TEL"
-      ],
-      "Mayo_TPS": [
-            "Mayo_TPS"
-      ],
-      "Mayo_TYH": [
-            "Mayo_TYH"
-      ],
-      "Mayo_TYL": [
-            "Mayo_TYL"
-      ],
-      "Mayo_USB": [
-            "Mayo_USB-L"
-      ],
-      "Mayo_VLB": [
-            "Mayo_VLB"
       ],
       "Mayo_WFR": [
             "Mayo_WFR"
